@@ -150,7 +150,7 @@ view model =
                 , input [ type_ "checkbox", class "fake-checkbox", onCheck (\_ -> CreateFormToggled), checked (isEditorToggled model model.current) ] []
                 , viewForm (getCurrentForm model)
                 , div [ class "d-flex p-2" ]
-                    [ button [ class "btn btn-outline-dark mx-auto", style "width" "90%", onClick CreateFormToggled ]
+                    [ button [ class "btn btn-outline-dark mx-auto bg-light", style "width" "90%", onClick CreateFormToggled ]
                         [ if isEditorToggled model model.current then
                             text "-"
 
@@ -325,7 +325,7 @@ viewForm form =
                     ]
                 , div [] [ viewSetForm form ]
                 , div [ class "d-flex justify-content-center" ]
-                    [ button [ class "btn btn-outline-dark bg-light mx-auto", style "margin-top" "30px", style "width" "50%", onClick (ClickedCreatedExercise form) ]
+                    [ button [ class "btn btn-outline-dark mx-auto", style "margin-top" "30px", style "width" "50%", onClick (ClickedCreatedExercise form) ]
                         [ text "Create set!" ]
                     ]
                 ]
