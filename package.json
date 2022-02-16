@@ -6,10 +6,11 @@
     "build": "parcel build src/index.html"
   },
   "devDependencies": {
-    "parcel": "latest"
+    "parcel": "^2.3.1"
   },
   "dependencies": {
     "elm": "^0.19.1-5",
-    "node-elm-compiler": "^5.0.6"
+    "node-elm-compiler": "^5.0.6",
+    "parcel": "^2.3.1"
   }
 }
