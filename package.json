@@ -1,0 +1,14 @@
+{
+  "name": "fitapp",
+  "source": "src/index.html",
+  "scripts": {
+    "start": "parcel",
+    "build": "parcel build"
+  },
+  "devDependencies": {
+    "parcel": "latest"
+  },
+  "dependencies": {
+    "elm": "^0.19.1-5"
+  }
+}

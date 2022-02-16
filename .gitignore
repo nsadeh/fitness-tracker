@@ -1,0 +1,5 @@
+.cache/
+.vscode/
+dist/
+elm-stuff/
+node_modules/
