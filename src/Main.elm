@@ -3,13 +3,9 @@ module Main exposing (..)
 import Browser exposing (Document)
 import Html exposing (Html, button, div, h1, input, text)
 import Html.Attributes exposing (class, placeholder, style, type_)
-import Html.Events exposing (onClick)
+import Html.Events exposing (onClick, onInput)
 import Log exposing (LogType(..), log)
 import User exposing (LoginInfo)
-import Bitwise exposing (and)
-import Task exposing (andThen)
-import Html.Events exposing (onInput)
-import Platform exposing (Task)
 
 
 main : Program () Model Msg
@@ -32,9 +28,7 @@ url =
 
 
 token : String
-token =
-    ***REMOVED***
-
+token = ""
 
 login : LoginInfo -> Cmd Msg
 login =
@@ -68,6 +62,7 @@ type Msg
     | LogoutRequested
     | EmailEntered String
     | PasswordEntered Password
+    | SignupRequested
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -79,12 +74,17 @@ update msg model =
         PasswordEntered pw ->
             { model | password = pw } |> noCommand
 
-        LoginRequested -> ( model, login model )
-            
-        LoggedIn result -> log Info result model
+        LoginRequested ->
+            ( model, login model )
+
+        LoggedIn result ->
+            log Info result model
 
         LogoutRequested ->
             model |> noCommand
+
+        SignupRequested ->
+            log Debug "We are not taking new sign ups currently. Message nnnsadeh@gmail.com for an account" model
 
 
 
@@ -106,11 +106,11 @@ viewLanding =
                 [ h1 [ class "mx-auto" ] [ text "Welcome to Fit.app!" ]
                 ]
             , div [ class "container-fluid", style "margin" "15px" ]
-                [ input [ type_ "email", class "form-control", placeholder "Enter email", style "margin-bottom" "10px", onInput EmailEntered ] []
+                [ input [ type_ "email", class "form-control", placeholder "Email", style "margin-bottom" "10px", onInput EmailEntered ] []
                 , input [ type_ "password", class "form-control", placeholder "Password", onInput PasswordEntered ] []
                 ]
             , div [ class "container-fluid d-flex flex-row justify-content-center" ]
-                [ button [ type_ "button", class "mr-2 btn btn-outline-dark btn-lg" , onClick LoginRequested] [ text "Log in" ]
+                [ button [ type_ "button", class "mr-2 btn btn-outline-dark btn-lg", onClick LoginRequested ] [ text "Log in" ]
                 , button [ type_ "button", class "ml-2 btn btn-primary btn-lg" ] [ text "Sign up" ]
                 ]
             ]
