@@ -1,77 +1,50 @@
-module WorkoutsPage exposing (main)
+module Pages.Workouts exposing (..)
 
-import Browser
-import DayOfWeek exposing (DayOfWeek, nextDay, prevDay, stringOfDay)
+import Api.Exercises as Exercise
+import Api.Supabase exposing (AuthenticatedUser, key, url)
+import Date exposing (Date, Unit(..))
 import Dict exposing (Dict)
 import Html exposing (Html, button, div, h2, h3, h4, input, small, text)
 import Html.Attributes exposing (checked, class, placeholder, style, type_, value)
 import Html.Events exposing (onCheck, onClick, onInput)
+import Http
 import Maybe exposing (withDefault)
-import OrderedDict exposing (OrderedDict)
 import StrengthSet exposing (StrengthExercise, StrengthSet)
+import Time
+import Utils.Log exposing (LogType(..), log)
+import Utils.OrderedDict
 import Workout exposing (Workout, addExercise, expandExercise, liftFormFunction)
 import WorkoutCreator exposing (WorkoutCreator, createNew, emptyForm, newSetReps, newSetWeight, toggleCreator, updateName, updateNumSets)
-import Log exposing (log, LogType(..))
+import Date exposing (format)
 
-
-main : Program () Model Msg
-main =
-    Browser.element { init = init, update = update, view = view, subscriptions = (\_ -> Sub.none) }
 
 
 -- MODEL --
 
 
-type alias Model =
-    { workouts : Dict String Workout
-    , current : DayOfWeek
+type alias Data =
+    { api : Exercise.API
+    , currentUser : AuthenticatedUser
+    , workouts : Dict String Workout
+    , today : Date
     }
 
 
-mondayWorkout : OrderedDict String StrengthExercise
-mondayWorkout =
-    List.map toTuple
-        [ { name = "Bench Press", sets = [ { reps = 5, weight = 150 }, { reps = 5, weight = 160 }, { reps = 5, weight = 170 } ], expanded = False }
-        , { name = "Back Squat", sets = [ { reps = 10, weight = 195 }, { reps = 10, weight = 195 }, { reps = 10, weight = 195 } ], expanded = False }
-        , { name = "Overhead Press", sets = [ { reps = 8, weight = 100 }, { reps = 10, weight = 95 }, { reps = 12, weight = 90 } ], expanded = False }
-        ]
-        |> OrderedDict.fromList
+type Model
+    = Unauthenticated
+    | Authenticated Data
 
 
-initModel : Model
-initModel =
-    { workouts =
-        Dict.fromList
-            [ ( "Monday"
-              , { exercises = mondayWorkout
-                , creator = emptyForm
-                }
-              )
-            ]
-    , current = DayOfWeek.Monday
-    }
-
-
-init : () -> ( Model, Cmd Msg )
-init _ =
-    ( initModel, Cmd.none )
-
-
-toTuple : StrengthExercise -> ( String, StrengthExercise )
-toTuple ex =
-    ( ex.name, ex )
-
-
-isEditorToggled : Model -> DayOfWeek -> Bool
+isEditorToggled : Data -> Date -> Bool
 isEditorToggled model day =
-    Dict.get (stringOfDay day) model.workouts
+    Dict.get (Date.toIsoString day) model.workouts
         |> Maybe.map (\workout -> workout.creator.isOpen)
         |> Maybe.withDefault False
 
 
-getCurrentForm : Model -> WorkoutCreator
+getCurrentForm : Data -> WorkoutCreator
 getCurrentForm model =
-    Dict.get (stringOfDay model.current) model.workouts
+    Dict.get (Date.toIsoString model.today) model.workouts
         |> Maybe.map (\w -> w.creator)
         |> withDefault emptyForm
 
@@ -79,13 +52,18 @@ getCurrentForm model =
 
 -- UPDATE --
 
+
 noOp : a -> ( a, Cmd msg )
 noOp a =
     ( a, Cmd.none )
 
+
 type Msg
-    = Toggled String
-    | Selected DayOfWeek
+    = LoggedIn AuthenticatedUser
+    | FetchedWorkout Date Workout
+    | FetchError Http.Error
+    | Toggled String
+    | Selected Date
     | CreateFormToggled
     | SetNumberEntered Int
     | ChangedWorkoutName String
@@ -95,42 +73,93 @@ type Msg
     | ClearForm
 
 
-updateWorkout : Model -> String -> (Workout -> Workout) -> Model
+updateWorkout : Data -> String -> (Workout -> Workout) -> Model
 updateWorkout model day mapper =
-    { model | workouts = Dict.update day (Maybe.map mapper) model.workouts }
+    Authenticated { model | workouts = Dict.update day (Maybe.map mapper) model.workouts }
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
-    case msg of
-        Toggled name ->
-            updateWorkout model (stringOfDay model.current) (expandExercise name) |> log Info ("toggled " ++ name)
+    case model of
+        Unauthenticated ->
+            case msg of
+                LoggedIn user ->
+                    let
+                        authedApi =
+                            Exercise.api url key user
+                    in
+                    ( Authenticated { api = authedApi
+                      , currentUser = user
+                      , workouts = Dict.empty
+                      , today = Date.fromCalendarDate 2022 Time.Mar 7
+                      }
+                    , authedApi.get ()
+                        |> Cmd.map parseWorkout
+                    )
+                _ -> log Error "Cannot update data on unauthenticated workouts page" model
 
-        Selected dayOfWeek ->
-            { model | current = dayOfWeek } |> noOp
+        Authenticated data ->
+            case msg of
+                LoggedIn user ->
+                    log Info ("user " ++ user.userId ++ " is already logged in") model
 
-        CreateFormToggled ->
-            updateWorkout model (stringOfDay model.current) (liftFormFunction toggleCreator) |> noOp
+                FetchedWorkout today workout ->
+                    ( Authenticated { data | workouts = Dict.insert (Date.toIsoString today) workout data.workouts }, Cmd.none )
 
-        SetNumberEntered int ->
-            updateWorkout model (stringOfDay model.current) (liftFormFunction (updateNumSets int)) |> noOp
+                FetchError _ ->
+                    log Error "error encountered" model
 
-        ChangedWorkoutName name ->
-            updateWorkout model (stringOfDay model.current) (liftFormFunction (updateName name)) |> noOp
+                Toggled name ->
+                    updateWorkout data (Date.toIsoString data.today) (expandExercise name) |> log Info ("toggled " ++ name)
 
-        UpdatedSetWeight index weight ->
-            updateWorkout model (stringOfDay model.current) (liftFormFunction (newSetWeight index weight)) |> noOp
+                Selected day ->
+                    Authenticated { data | today = day } |> noOp
 
-        UpdatedSetReps index reps ->
-            updateWorkout model (stringOfDay model.current) (liftFormFunction (newSetReps index reps)) |> noOp
+                CreateFormToggled ->
+                    updateWorkout data (Date.toIsoString data.today) (liftFormFunction toggleCreator) |> noOp
 
-        ClickedCreatedExercise form ->
-            updateWorkout model (stringOfDay model.current) (addExercise (createNew form))
-                |> (\m -> updateWorkout m (stringOfDay model.current) (\w -> { w | creator = emptyForm }))
-                |> noOp
+                SetNumberEntered int ->
+                    updateWorkout data (Date.toIsoString data.today) (liftFormFunction (updateNumSets int)) |> noOp
 
-        ClearForm ->
-            updateWorkout model (stringOfDay model.current) (\workout -> { workout | creator = emptyForm }) |> noOp
+                ChangedWorkoutName name ->
+                    updateWorkout data (Date.toIsoString data.today) (liftFormFunction (updateName name)) |> noOp
+
+                UpdatedSetWeight index weight ->
+                    updateWorkout data (Date.toIsoString data.today) (liftFormFunction (newSetWeight index weight)) |> noOp
+
+                UpdatedSetReps index reps ->
+                    updateWorkout data (Date.toIsoString data.today) (liftFormFunction (newSetReps index reps)) |> noOp
+
+                ClickedCreatedExercise form ->
+                    updateWorkout data (Date.toIsoString data.today) (addExercise (createNew form)) |> noOp
+                        -- |> (\m -> updateWorkout m.data (Date.toIsoString data.today) (\w -> { w | creator = emptyForm }))
+                        -- |> noOp
+
+                ClearForm ->
+                    updateWorkout data (Date.toIsoString data.today) (\workout -> { workout | creator = emptyForm }) |> noOp
+
+
+parseWorkout : Result Http.Error Workout -> Msg
+parseWorkout result =
+    case result of
+        Ok workout ->
+            FetchedWorkout (Date.fromCalendarDate 2022 Time.Mar 7) workout
+
+        Err err ->
+            FetchError err
+
+
+prevDay : Date -> Date
+prevDay date =
+    Date.add Days -1 date
+
+
+nextDay : Date -> Date
+nextDay date =
+    Date.add Days 1 date
+
+dateToString: Date -> String
+dateToString date = format "EEEE, d MMMM y" date
 
 
 
@@ -139,38 +168,43 @@ update msg model =
 
 view : Model -> Html Msg
 view model =
-    let
-        exerciseList =
-            Dict.get (stringOfDay model.current) model.workouts
-                |> Maybe.map (\workout -> workout.exercises)
-                |> Maybe.map OrderedDict.values
-                |> Maybe.map (List.map viewExercises)
-                |> Maybe.withDefault []
-    in
-    div [ style "padding" "20px" ]
-        [ div [ class "row" ]
-            [ div [ class "col-lg" ]
-                [ div [ class "container-fluid navbar" ]
-                    [ button [ class "btn btn-outline-dark", onClick (Selected (prevDay model.current)) ] [ text "<" ]
-                    , h2 [ class "mx-auto" ]
-                        [ text (stringOfDay model.current) ]
-                    , button [ class "btn btn-outline-dark", onClick (Selected (nextDay model.current)) ] [ text ">" ]
-                    ]
-                , div [] exerciseList
-                , input [ type_ "checkbox", class "fake-checkbox", onCheck (\_ -> CreateFormToggled), checked (isEditorToggled model model.current) ] []
-                , viewForm (getCurrentForm model)
-                , div [ class "d-flex p-2" ]
-                    [ button [ class "btn btn-outline-dark mx-auto bg-light", style "width" "90%", onClick CreateFormToggled ]
-                        [ if isEditorToggled model model.current then
-                            text "-"
+    case model of
+        Unauthenticated ->
+            div [] []
 
-                          else
-                            text "+"
+        Authenticated workouts ->
+            let
+                exerciseList =
+                    Dict.get (Date.toIsoString workouts.today) workouts.workouts
+                        |> Maybe.map (\workout -> workout.exercises)
+                        |> Maybe.map Utils.OrderedDict.values
+                        |> Maybe.map (List.map viewExercises)
+                        |> Maybe.withDefault []
+            in
+            div [ style "padding" "20px" ]
+                [ div [ class "row" ]
+                    [ div [ class "col-lg" ]
+                        [ div [ class "container-fluid navbar" ]
+                            [ button [ class "btn btn-outline-dark", onClick (Selected (prevDay workouts.today)) ] [ text "<" ]
+                            , h2 [ class "mx-auto" ]
+                                [ text (dateToString workouts.today) ]
+                            , button [ class "btn btn-outline-dark", onClick (Selected workouts.today) ] [ text ">" ]
+                            ]
+                        , div [] exerciseList
+                        , input [ type_ "checkbox", class "fake-checkbox", onCheck (\_ -> CreateFormToggled), checked (isEditorToggled workouts workouts.today) ] []
+                        , viewForm (getCurrentForm workouts)
+                        , div [ class "d-flex p-2" ]
+                            [ button [ class "btn btn-outline-dark mx-auto bg-light", style "width" "90%", onClick CreateFormToggled ]
+                                [ if isEditorToggled workouts workouts.today then
+                                    text "-"
+
+                                  else
+                                    text "+"
+                                ]
+                            ]
                         ]
                     ]
                 ]
-            ]
-        ]
 
 
 viewExercises : StrengthExercise -> Html Msg

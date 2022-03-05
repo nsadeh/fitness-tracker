@@ -1,4 +1,4 @@
-module DayOfWeek exposing (..)
+module Utils.DayOfWeek exposing (..)
 
 type DayOfWeek
     = Monday

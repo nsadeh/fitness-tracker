@@ -1,5 +1,5 @@
 -- copied from https://github.com/j-maas/elm-ordered-containers/tree/1.0.0
-module OrderedDict exposing
+module Utils.OrderedDict exposing
     ( OrderedDict
     , empty, singleton, insert, update, remove
     , isEmpty, member, get, size

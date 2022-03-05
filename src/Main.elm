@@ -1,18 +1,17 @@
-module Main exposing (..)
+module Main exposing (main)
 
 import Browser exposing (Document)
-import Html exposing (Html, button, div, h1, input, text)
-import Html.Attributes exposing (class, placeholder, style, type_)
-import Html.Events exposing (onClick, onInput)
-import Log exposing (LogType(..), log)
-import User exposing (LoginInfo)
+import Html exposing (Html)
+import Pages.Login as Login exposing (Msg(..))
+import Pages.Workouts as Workouts exposing (Model(..), Msg(..))
+import Utils.Log exposing (LogType(..), log)
 
 
 main : Program () Model Msg
 main =
     Browser.document
-        { init = \_ -> ( { email = "", password = "" }, Cmd.none )
-        , view = \_ -> view viewLanding
+        { init = \_ -> ( LoginPage Login.empty, Cmd.none )
+        , view = viewDocument view
         , update = update
         , subscriptions = \_ -> Sub.none
         }
@@ -22,96 +21,63 @@ main =
 -- Model --
 
 
-url : String
-url =
-    "https://zmwmosaxfkywgkueembd.supabase.co"
-
-
-token : String
-token = ""
-
-login : LoginInfo -> Cmd Msg
-login =
-    \info -> User.login url token info |> Cmd.map LoggedIn
-
-
-type alias UserId =
-    String
-
-
-type alias Model =
-    User.LoginInfo
+type Model
+    = LoginPage Login.Model
+    | WorkoutsPage Workouts.Model
 
 
 
 -- Update --
 
 
-noCommand : model -> ( model, Cmd Msg )
-noCommand model =
-    ( model, Cmd.none )
-
-
-type alias Password =
-    String
-
-
 type Msg
-    = LoginRequested
-    | LoggedIn String
-    | LogoutRequested
-    | EmailEntered String
-    | PasswordEntered Password
-    | SignupRequested
+    = LoginMessage Login.Msg
+    | WorkoutsMessage Workouts.Msg
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
-    case msg of
-        EmailEntered email ->
-            { model | email = email } |> noCommand
+    case ( msg, model ) of
+        ( LoginMessage loginMsg, LoginPage loginMdl ) ->
+            case loginMsg of
+                LoginSucceeded user ->
+                    Workouts.update (LoggedIn user) Unauthenticated |> asMain WorkoutsPage WorkoutsMessage
 
-        PasswordEntered pw ->
-            { model | password = pw } |> noCommand
+                _ ->
+                    Login.update loginMsg loginMdl |> asMain LoginPage LoginMessage
 
-        LoginRequested ->
-            ( model, login model )
+        ( WorkoutsMessage workoutMsg, WorkoutsPage workoutPage ) ->
+            case workoutMsg of
+                _ ->
+                    Workouts.update workoutMsg workoutPage |> asMain WorkoutsPage WorkoutsMessage
 
-        LoggedIn result ->
-            log Info result model
+        ( _, mdl ) ->
+            log Info "Unsupported operation" mdl
 
-        LogoutRequested ->
-            model |> noCommand
 
-        SignupRequested ->
-            log Debug "We are not taking new sign ups currently. Message nnnsadeh@gmail.com for an account" model
+asMain : (mdl -> Model) -> (msg -> Msg) -> ( mdl, Cmd msg ) -> ( Model, Cmd Msg )
+asMain modelMapper cmdMapper ( mdl, cmd ) =
+    ( modelMapper mdl, Cmd.map cmdMapper cmd )
 
 
 
 -- View --
 
 
-view : Html Msg -> Document Msg
-view html =
+viewDocument : (Model -> Html Msg) -> Model -> Document Msg
+viewDocument render model =
     { title = "Fit.app"
-    , body = List.singleton html
+    , body = List.singleton (render model)
     }
 
 
-viewLanding : Html Msg
-viewLanding =
-    div [ class "login-form" ]
-        [ div [ class "form-group container-fluid" ]
-            [ div [ class "mx-auto" ]
-                [ h1 [ class "mx-auto" ] [ text "Welcome to Fit.app!" ]
-                ]
-            , div [ class "container-fluid", style "margin" "15px" ]
-                [ input [ type_ "email", class "form-control", placeholder "Email", style "margin-bottom" "10px", onInput EmailEntered ] []
-                , input [ type_ "password", class "form-control", placeholder "Password", onInput PasswordEntered ] []
-                ]
-            , div [ class "container-fluid d-flex flex-row justify-content-center" ]
-                [ button [ type_ "button", class "mr-2 btn btn-outline-dark btn-lg", onClick LoginRequested ] [ text "Log in" ]
-                , button [ type_ "button", class "ml-2 btn btn-primary btn-lg" ] [ text "Sign up" ]
-                ]
-            ]
-        ]
+view : Model -> Html Msg
+view model =
+    case model of
+        LoginPage _ ->
+            Login.viewLogin
+                |> Html.map LoginMessage
+
+        WorkoutsPage w ->
+            Workouts.view w
+                |> Html.map WorkoutsMessage

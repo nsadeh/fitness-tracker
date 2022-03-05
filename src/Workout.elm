@@ -2,7 +2,7 @@ module Workout exposing (..)
 
 import StrengthSet exposing (StrengthExercise)
 import WorkoutCreator exposing (WorkoutCreator)
-import OrderedDict exposing (OrderedDict)
+import Utils.OrderedDict exposing (OrderedDict)
 
 
 
@@ -21,7 +21,7 @@ type alias Workout =
 
 updateExercise : Workout -> String -> (StrengthExercise -> StrengthExercise) -> Workout
 updateExercise workout name mapper =
-    { workout | exercises = OrderedDict.update name (Maybe.map mapper) workout.exercises }
+    { workout | exercises = Utils.OrderedDict.update name (Maybe.map mapper) workout.exercises }
 
 
 expandExercise : String -> Workout -> Workout
@@ -36,9 +36,9 @@ liftFormFunction mapper =
 
 addExercise : StrengthSet.StrengthExercise -> Workout -> Workout
 addExercise exercise workout =
-    case OrderedDict.get exercise.name workout.exercises of
+    case Utils.OrderedDict.get exercise.name workout.exercises of
         Just _ ->
             workout
 
         Nothing ->
-            { workout | exercises = OrderedDict.insert exercise.name exercise workout.exercises }
+            { workout | exercises = Utils.OrderedDict.insert exercise.name exercise workout.exercises }

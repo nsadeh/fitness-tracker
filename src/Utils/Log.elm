@@ -1,4 +1,4 @@
-port module Log exposing (log, LogType(..))
+port module Utils.Log exposing (log, LogType(..))
 
 type LogType = Info | Debug | Error
 port logInfo : String -> Cmd msg
