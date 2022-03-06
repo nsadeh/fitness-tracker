@@ -1,44 +1,25 @@
 module Workout exposing (..)
 
-import StrengthSet exposing (StrengthExercise)
-import WorkoutCreator exposing (WorkoutCreator)
 import Utils.OrderedDict exposing (OrderedDict)
+import Utils.OrderedDict as OrderedDict
+import StrengthSet exposing (StrengthExercise)
 
+type alias ExerciseName = String
+type alias Workout = OrderedDict ExerciseName StrengthExercise
 
-
--- TYPES --
-
-
-type alias Workout =
-    { exercises : OrderedDict String StrengthExercise
-    , creator : WorkoutCreator
-    }
-
-
-
--- FUNCTIONS --
-
-
-updateExercise : Workout -> String -> (StrengthExercise -> StrengthExercise) -> Workout
-updateExercise workout name mapper =
-    { workout | exercises = Utils.OrderedDict.update name (Maybe.map mapper) workout.exercises }
-
-
-expandExercise : String -> Workout -> Workout
-expandExercise name workout =
-    updateExercise workout name (\exercise -> { exercise | expanded = not exercise.expanded })
-
-
-liftFormFunction : (WorkoutCreator -> WorkoutCreator) -> (Workout -> Workout)
-liftFormFunction mapper =
-    \workout -> { workout | creator = mapper workout.creator }
-
-
-addExercise : StrengthSet.StrengthExercise -> Workout -> Workout
-addExercise exercise workout =
-    case Utils.OrderedDict.get exercise.name workout.exercises of
+addExercise : Workout -> StrengthSet.StrengthExercise -> Workout
+addExercise workout exercise =
+    case OrderedDict.get exercise.name workout of
         Just _ ->
             workout
 
         Nothing ->
-            { workout | exercises = Utils.OrderedDict.insert exercise.name exercise workout.exercises }
+            OrderedDict.insert exercise.name exercise workout
+
+expandExercise: String -> Workout -> Workout
+expandExercise name workout = 
+    updateExercise name (\exercise -> { exercise | expanded = not exercise.expanded }) workout
+
+
+updateExercise : String -> (StrengthExercise -> StrengthExercise) -> Workout -> Workout
+updateExercise name mapper workout = OrderedDict.update name (Maybe.map mapper) workout

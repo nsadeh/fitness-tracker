@@ -1,7 +1,7 @@
 module Pages.Login exposing (..)
 
 import Api.Supabase exposing (AuthenticatedUser)
-import Api.User exposing (LoginInfo)
+import Api.User exposing (LoginInfo, encodeUser)
 import Html exposing (Html, button, div, h1, input, text)
 import Html.Attributes exposing (class, placeholder, style, type_)
 import Html.Events exposing (onClick, onInput)
@@ -10,6 +10,9 @@ import Toast
 import Utils.Log exposing (LogType(..), log)
 import Api.Supabase exposing (url)
 import Api.Supabase exposing (key)
+import Json.Encode as E
+import Api.User exposing (storeUser)
+import Utils.Log exposing (logCmd)
 
 
 type alias Model =
@@ -52,7 +55,7 @@ update msg model =
             ( empty, Cmd.none )
 
         LoginSucceeded _ ->
-            log Info "Logged in" model
+            log Info "This never gets called lol" model
 
         SubmittedRegistration ->
             log Info "Not taking new users" model

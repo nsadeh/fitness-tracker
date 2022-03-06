@@ -1,16 +1,22 @@
 module Main exposing (main)
 
+import Api.User exposing (getUser)
 import Browser exposing (Document)
 import Html exposing (Html)
+import Json.Decode exposing (errorToString)
+import Json.Encode as E
 import Pages.Login as Login exposing (Msg(..))
 import Pages.Workouts as Workouts exposing (Model(..), Msg(..))
+import Task
 import Utils.Log exposing (LogType(..), log)
+import Http
+import Api.User exposing (refresh)
 
 
-main : Program () Model Msg
+main : Program E.Value Model Msg
 main =
     Browser.document
-        { init = \_ -> ( LoginPage Login.empty, Cmd.none )
+        { init = init
         , view = viewDocument view
         , update = update
         , subscriptions = \_ -> Sub.none
@@ -19,6 +25,16 @@ main =
 
 
 -- Model --
+
+
+init : E.Value -> ( Model, Cmd Msg )
+init flags =
+    case getUser flags of
+        Ok user ->
+            ( WorkoutsPage Workouts.Unauthenticated, Task.succeed (Workouts.LoggedIn user) |> Task.perform WorkoutsMessage )
+
+        Err error ->
+            log Info ("Failed with error " ++ errorToString error) (LoginPage Login.empty)
 
 
 type Model
@@ -48,6 +64,7 @@ update msg model =
 
         ( WorkoutsMessage workoutMsg, WorkoutsPage workoutPage ) ->
             case workoutMsg of
+                FailedRefresh err -> log Error ("Failed with error " ++ (Workouts.parseError err)) (LoginPage Login.empty)
                 _ ->
                     Workouts.update workoutMsg workoutPage |> asMain WorkoutsPage WorkoutsMessage
 
