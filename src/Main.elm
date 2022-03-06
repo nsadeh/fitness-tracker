@@ -9,8 +9,6 @@ import Pages.Login as Login exposing (Msg(..))
 import Pages.Workouts as Workouts exposing (Model(..), Msg(..))
 import Task
 import Utils.Log exposing (LogType(..), log)
-import Http
-import Api.User exposing (refresh)
 
 
 main : Program E.Value Model Msg
@@ -64,7 +62,9 @@ update msg model =
 
         ( WorkoutsMessage workoutMsg, WorkoutsPage workoutPage ) ->
             case workoutMsg of
-                FailedRefresh err -> log Error ("Failed with error " ++ (Workouts.parseError err)) (LoginPage Login.empty)
+                FailedRefresh err ->
+                    log Error ("Failed with error " ++ Workouts.parseError err) (LoginPage Login.empty)
+
                 _ ->
                     Workouts.update workoutMsg workoutPage |> asMain WorkoutsPage WorkoutsMessage
 

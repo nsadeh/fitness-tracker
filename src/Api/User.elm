@@ -43,8 +43,8 @@ encodeUser user =
         ]
 
 
-decode : D.Decoder AuthenticatedUser
-decode =
+decodeUser : D.Decoder AuthenticatedUser
+decodeUser =
     D.map3 AuthenticatedUser
         (D.at [ "user", "id" ] D.string)
         (D.field "access_token" D.string)
@@ -78,7 +78,7 @@ login url apiKey loginInfo =
             ]
         , url = url ++ "/auth/v1/token?grant_type=password"
         , body = H.jsonBody (encode loginInfo)
-        , expect = H.expectJson identity decode
+        , expect = H.expectJson identity decodeUser
         , timeout = Nothing
         , tracker = Nothing
         }
@@ -92,16 +92,10 @@ refresh url key refreshToken = H.request
         ]
     , url = url ++ "/auth/v1/token?grant_type=refresh_token"
     , body = H.jsonBody (E.object (List.singleton ("refresh_token", E.string refreshToken)))
-    , expect = H.expectJson identity decode
+    , expect = H.expectJson identity decodeUser
     , timeout = Nothing
     , tracker = Nothing
     }
-
-
--- curl -X POST 'https://zmwmosaxfkywgkueembd.supabase.co/auth/v1/token?grant_type=refresh_token' \
--- -H "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inptd21vc2F4Zmt5d2drdWVlbWJkIiwicm9sZSI6ImFub24iLCJpYXQiOjE2NDUwNzExNTMsImV4cCI6MTk2MDY0NzE1M30.M3AI9OxwlNk97FoieuitzpBCCvVr7RDiCPtaXUQo6gM" \
--- -H "Content-Type: application/json" \
--- -d '{"refresh_token": "tOYX9g6zqDs5JcJwVTnN6g"}'
 
 storeUser : AuthenticatedUser -> Cmd msg
 storeUser user =
