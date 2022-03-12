@@ -71,7 +71,7 @@ decodeId =
 
 login : UnauthenticatedRequest LoginInfo AuthenticatedUser
 login url apiKey loginInfo =
-    request
+    H.request
         { method = "POST"
         , headers =
             [ H.header "apikey" apiKey

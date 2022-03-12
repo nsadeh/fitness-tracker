@@ -1,6 +1,6 @@
 module Pages.Workouts exposing (..)
 
-import Api.Exercises as Exercise exposing (InsertExerciseRequest, api)
+import Api.Exercises as Exercise exposing (InsertExerciseRequest, api, generateExerciseID)
 import Api.Supabase exposing (AuthenticatedUser, key, url)
 import Api.User exposing (refresh, storeUser)
 import Date exposing (Date, Unit(..), format, weekday)
@@ -13,7 +13,7 @@ import StrengthSet exposing (StrengthExercise, StrengthSet)
 import Time
 import Utils.Log exposing (LogType(..), log, logCmd)
 import Utils.OrderedDict as OrderedDict exposing (OrderedDict)
-import Workout exposing (Workout, addExercise, expandExercise)
+import Workout exposing (Workout, expandExercise)
 import WorkoutCreator exposing (WorkoutCreator, createNew, emptyForm, newSetReps, newSetWeight, toggleCreator, updateName, updateNumSets)
 
 
@@ -61,8 +61,12 @@ type Msg
     | ChangedWorkoutName String
     | UpdatedSetWeight Int Float
     | UpdatedSetReps Int Int
-    | CreateNewExercise
+    | ClickedCreateExercise
+    | CreateNewExercise String
     | InsertError String
+    | LogSet String StrengthSet
+    | LoggedSet String Int
+    | DeleteExercise String
     | ClearForm
 
 
@@ -140,11 +144,23 @@ update msg model =
                 UpdatedSetReps index reps ->
                     Authenticated { data | form = newSetReps index reps data.form } |> noOp
 
-                CreateNewExercise ->
-                    ( model, data.api.insert (newExerciseBody data) |> Cmd.map parseInsertResults )
+                ClickedCreateExercise ->
+                    ( model, Cmd.map CreateNewExercise <| generateExerciseID )
+
+                CreateNewExercise uuid ->
+                    ( model, data.api.insert (newExerciseBody uuid data) |> Cmd.map parseInsertResults )
 
                 InsertError err ->
                     log Error ("Error while inserting exercise log " ++ err) model
+
+                LogSet id set ->
+                    ( model, data.api.logSet id set |> Cmd.map parseInsertResults )
+
+                LoggedSet _ _ ->
+                    log Info "In the future we will grey out logged sets" model
+
+                DeleteExercise id ->
+                    ( model, data.api.deleteExercise id (Date.fromCalendarDate 2022 Time.Mar 7) |> Cmd.map parseInsertResults )
 
                 ClearForm ->
                     ( Authenticated { data | form = emptyForm }
@@ -201,11 +217,14 @@ dateToString date =
     format "EEE MMMM d y" date
 
 
-newExerciseBody : Data -> InsertExerciseRequest
-newExerciseBody data =
-    { exercise = createNew data.form
-    , order = List.length <| OrderedDict.keys data.workout
-    , day = weekday data.today
+newExerciseBody : String -> Data -> InsertExerciseRequest
+newExerciseBody id data =
+    { id = id
+    , payload = 
+        { exercise = createNew data.form
+        , order = List.length <| OrderedDict.keys data.workout
+        , day = weekday data.today
+        }
     }
 
 
@@ -233,8 +252,8 @@ view model =
             let
                 exerciseList =
                     data.workout
+                        |> OrderedDict.map viewExercises
                         |> OrderedDict.values
-                        |> List.map viewExercises
             in
             div [ style "padding" "20px" ]
                 [ div [ class "row" ]
@@ -262,8 +281,8 @@ view model =
                 ]
 
 
-viewExercises : StrengthExercise -> Html Msg
-viewExercises exercise =
+viewExercises : String -> StrengthExercise -> Html Msg
+viewExercises id exercise =
     let
         ( weights, reps ) =
             getSetRanges exercise.sets
@@ -279,7 +298,7 @@ viewExercises exercise =
                             " rounded-bottom"
                        )
                 )
-            , onClick (Toggled exercise.name)
+            , onClick (Toggled id)
             ]
             [ div [ class "row justify-content-between no-gutters", style "white-space" "nowrap" ]
                 [ div [ class "container-fluid col-sm-2" ]
@@ -320,16 +339,19 @@ viewExercises exercise =
                     [ button [ type_ "button", class "btn btn-outline-dark float-right" ]
                         [ text "Log all!"
                         ]
+                    , button [ type_ "button", class "btn btn-outline-dark float-right", onClick (DeleteExercise id) ]
+                        [ text "Delete!"
+                        ]
                     ]
                 ]
             ]
         , input [ type_ "checkbox", class "fake-checkbox", checked exercise.expanded, onCheck (\_ -> Toggled exercise.name) ] []
-        , div [ class "slide" ] (List.indexedMap viewSet exercise.sets)
+        , div [ class "slide" ] (List.indexedMap (viewSet id) exercise.sets)
         ]
 
 
-viewSet : Int -> StrengthSet -> Html Msg
-viewSet num set =
+viewSet : String -> Int -> StrengthSet -> Html Msg
+viewSet id num set =
     div [ class "container-fluid list-group-item bg-light border-5" ]
         [ div [ class "row", style "white-space" "nowrap" ]
             [ div [ class "container-fluid col-sm-2" ]
@@ -356,7 +378,7 @@ viewSet num set =
                 [ input [ type_ "number", class "form-control", value (String.fromInt set.reps) ] []
                 ]
             , div [ class "container-fluid col-sm-2", style "margin-top" ".5rem" ]
-                [ button [ type_ "button", class "btn btn-outline-dark float-right" ]
+                [ button [ type_ "button", class "btn btn-outline-dark float-right", onClick (LogSet id set) ]
                     [ text "Log set"
                     ]
                 ]
@@ -424,7 +446,7 @@ viewForm form =
                     ]
                 , div [] [ viewSetForm form ]
                 , div [ class "d-flex justify-content-center" ]
-                    [ button [ class "btn btn-outline-dark mx-auto", style "margin-top" "30px", style "width" "50%", onClick CreateNewExercise ]
+                    [ button [ class "btn btn-outline-dark mx-auto", style "margin-top" "30px", style "width" "50%", onClick ClickedCreateExercise ]
                         [ text "Create set!" ]
                     ]
                 ]

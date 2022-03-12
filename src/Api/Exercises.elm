@@ -7,21 +7,42 @@ import Http as H
 import Json.Decode as D
 import Json.Decode.Extra exposing (..)
 import Json.Encode as E
+import Random exposing (generate)
 import Result as Result
-import StrengthSet exposing (StrengthExercise, decodeExercise, encodeExercise)
+import StrengthSet exposing (StrengthExercise, StrengthSet, decodeExercise, encodeExercise, encodeSet)
 import Time
-import UUID exposing (UUID)
-import Utils.OrderedDict exposing (OrderedDict, empty, filter, insert)
+import UUID exposing (UUID, generator)
+import Utils.OrderedDict exposing (empty, insert)
 import Workout exposing (Workout)
 
 
 type alias API =
     { get : Date -> Cmd (Result H.Error Workout)
     , insert : InsertExerciseRequest -> Cmd (Result H.Error ())
+    , logSet : String -> StrengthSet -> Cmd (Result H.Error ())
+    , deleteExercise : String -> Date -> Cmd (Result H.Error ())
     }
 
 
 type alias InsertExerciseRequest =
+    { id : String
+    , payload : InsertPayload
+    }
+
+
+type alias LogSetRequest =
+    { exerciseId : String
+    , set : StrengthSet
+    }
+
+
+type alias DeleteExerciseRequest =
+    { exerciseId : String
+    , asOf : Date
+    }
+
+
+type alias InsertPayload =
     { exercise : StrengthExercise
     , order : Int
     , day : Weekday
@@ -29,7 +50,9 @@ type alias InsertExerciseRequest =
 
 
 type Action
-    = Insert InsertExerciseRequest
+    = Insert InsertPayload
+    | LogSet StrengthSet
+    | Delete DeleteExerciseRequest
 
 
 type alias JournalRow =
@@ -83,6 +106,12 @@ foldRow row workouts =
             in
             Dict.insert (weekdayToNumber request.day) (insert row.exerciseId request.exercise current) workouts
 
+        LogSet _ ->
+            workouts
+
+        Delete _ ->
+            workouts
+
 
 decodeRow : D.Decoder JournalRow
 decodeRow =
@@ -92,9 +121,9 @@ decodeRow =
 encodeInsertRequest : InsertExerciseRequest -> E.Value
 encodeInsertRequest request =
     E.object
-        [ ( "order", E.int request.order )
-        , ( "day", E.int (weekdayToNumber request.day) )
-        , ( "exercise", encodeExercise request.exercise )
+        [ ( "order", E.int request.payload.order )
+        , ( "day", E.int (weekdayToNumber request.payload.day) )
+        , ( "exercise", encodeExercise request.payload.exercise )
         ]
 
 
@@ -104,13 +133,13 @@ encodeInsertRow userId request =
         [ ( "user_id", E.string userId )
         , ( "action_type", E.string "InsertNewExercise" )
         , ( "payload", encodeInsertRequest request )
-        , ( "exercise_id", E.string request.exercise.name )
+        , ( "exercise_id", E.string request.id )
         ]
 
 
-decodeInsert : D.Decoder InsertExerciseRequest
+decodeInsert : D.Decoder InsertPayload
 decodeInsert =
-    D.map3 InsertExerciseRequest
+    D.map3 InsertPayload
         (D.field "exercise" decodeExercise)
         (D.field "order" D.int)
         (D.field "day" (D.map numberToWeekday <| D.int))
@@ -122,6 +151,12 @@ decodePayload action =
         "InsertNewExercise" ->
             D.map Insert decodeInsert
 
+        "LogSet" ->
+            D.map LogSet StrengthSet.decodeSet
+
+        "DeletedExercise" ->
+            D.map Delete 
+
         _ ->
             D.fail ("Failed to decode this action: " ++ action)
 
@@ -129,8 +164,21 @@ decodePayload action =
 api : Url -> ApiKey -> AuthenticatedUser -> API
 api url key user =
     { get = getExercises url key user
-    , insert = insertExercise url key user
+    , insert = \p -> insertJournalEntry url key user ( p.id, Insert p.payload )
+    , logSet = \id set -> insertJournalEntry url key user ( id, LogSet set )
+    , deleteExercise = \id date -> insertJournalEntry url key user ( id, Delete (DeleteExerciseRequest id date) )
     }
+
+
+
+-- { get = getExercises url key user
+-- , insert = insertExercise url key user
+-- , logSet = \exerciseId set -> LogSetRequest exerciseId set |> logSet url key user
+-- , deleteExercise =
+--     \exerciseId asOfDate ->
+--         DeleteExerciseRequest exerciseId asOfDate
+--             |> deleteExercise url key user
+-- }
 
 
 getExercises : AuthenticatedRequest Date Workout
@@ -178,3 +226,98 @@ insertExercise url key user request =
         , timeout = Nothing
         , tracker = Nothing
         }
+
+
+deleteExercise : AuthenticatedRequest DeleteExerciseRequest ()
+deleteExercise url key user request =
+    H.request
+        { method = "POST"
+        , headers =
+            [ H.header "apikey" key
+            , H.header "Authorization" ("Bearer " ++ user.authToken)
+            ]
+        , url = url ++ "/rest/v1/exercise_journal"
+        , body = H.jsonBody (encodeDeleteRequest request)
+        , expect = H.expectWhatever identity
+        , timeout = Nothing
+        , tracker = Nothing
+        }
+
+
+logSet : AuthenticatedRequest LogSetRequest ()
+logSet url key user request =
+    H.request
+        { method = "POST"
+        , headers =
+            [ H.header "apikey" key
+            , H.header "Authorization" ("Bearer " ++ user.authToken)
+            ]
+        , url = url ++ "/rest/v1/exercise_journal"
+        , body = H.jsonBody (encodeLogSet request)
+        , expect = H.expectWhatever identity
+        , timeout = Nothing
+        , tracker = Nothing
+        }
+
+
+encodeLogSet : LogSetRequest -> E.Value
+encodeLogSet request =
+    E.object
+        [ ( "action_type", E.string "LogSet" )
+        , ( "payload", encodeSet request.set )
+        , ( "exercise_id", E.string request.exerciseId )
+        ]
+
+
+encodeDeleteRequest : DeleteExerciseRequest -> E.Value
+encodeDeleteRequest request =
+    E.object
+        [ ( "action_type", E.string "DeleteExercise" )
+        , ( "payload"
+          , E.object
+                [ ( "asOfDate", E.string (Date.toIsoString request.asOf) )
+                , ( "exerciseId", E.string request.exerciseId )
+                ]
+          )
+        , ( "exercise_id", E.string request.exerciseId )
+        ]
+
+
+insertJournalEntry : AuthenticatedRequest ( String, Action ) ()
+insertJournalEntry url key user ( id, action ) =
+    let
+        body =
+            case action of
+                Insert request ->
+                    encodeInsertRequest (InsertExerciseRequest id request)
+
+                Delete request ->
+                    encodeDeleteRequest request
+
+                LogSet request ->
+                    encodeLogSet (LogSetRequest id request)
+    in
+    H.request
+        { method = "POST"
+        , headers =
+            [ H.header "apikey" key
+            , H.header "Authorization" ("Bearer " ++ user.authToken)
+            ]
+        , url = url ++ "/rest/v1/exercise_journal"
+        , body = H.jsonBody body
+        , expect = H.expectWhatever identity
+        , timeout = Nothing
+        , tracker = Nothing
+        }
+
+
+generateUUID : Cmd UUID
+generateUUID =
+    generate identity generator
+
+
+generateExerciseID : Cmd String
+generateExerciseID =
+    generateUUID
+        |> Cmd.map UUID.toString
+        |> Cmd.map (String.append "exercise|")
