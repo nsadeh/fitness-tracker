@@ -1,8 +1,8 @@
 module Pages.Workouts exposing (..)
 
-import Api.Exercises as Exercise exposing (InsertExerciseRequest, api, generateExerciseID)
-import Api.Supabase exposing (AuthenticatedUser, key, url)
-import Api.User exposing (refresh, storeUser)
+import Api.Exercises as Exercise exposing (InsertPayload)
+import Api.Supabase exposing (AuthenticatedUser, RequestError(..), key, url)
+import Api.User as User exposing (storeUser)
 import Date exposing (Date, Unit(..), format, weekday)
 import Html exposing (Html, button, div, h2, h3, h4, input, small, text)
 import Html.Attributes exposing (checked, class, placeholder, style, type_, value)
@@ -10,6 +10,7 @@ import Html.Events exposing (onCheck, onClick, onInput)
 import Http as H
 import Maybe exposing (withDefault)
 import StrengthSet exposing (StrengthExercise, StrengthSet)
+import Task
 import Time
 import Utils.Log exposing (LogType(..), log, logCmd)
 import Utils.OrderedDict as OrderedDict exposing (OrderedDict)
@@ -52,8 +53,8 @@ noOp a =
 type Msg
     = LoggedIn AuthenticatedUser
     | FetchedWorkout Workout
-    | FetchError H.Error
-    | FailedRefresh H.Error
+    | FetchError RequestError
+    | FailedRefresh RequestError
     | Toggled String
     | Selected Date
     | CreateFormToggled
@@ -61,9 +62,8 @@ type Msg
     | ChangedWorkoutName String
     | UpdatedSetWeight Int Float
     | UpdatedSetReps Int Int
-    | ClickedCreateExercise
-    | CreateNewExercise String
     | InsertError String
+    | CreateNewExercise
     | LogSet String StrengthSet
     | LoggedSet String Int
     | DeleteExercise String
@@ -82,17 +82,20 @@ update msg model =
             case msg of
                 LoggedIn user ->
                     let
-                        authedApi =
+                        exerciseApi =
                             Exercise.api url key user
                     in
                     ( Authenticated
-                        { api = authedApi
+                        { api = exerciseApi
                         , currentUser = user
                         , workout = OrderedDict.empty
                         , form = emptyForm
                         , today = Date.fromCalendarDate 2022 Time.Mar 7
                         }
-                    , Cmd.batch [ storeUser user, Cmd.map parseWorkout (authedApi.get (Date.fromCalendarDate 2022 Time.Mar 7)) ]
+                    , Cmd.batch
+                        [ storeUser user
+                        , Task.attempt parseWorkout (exerciseApi.getWorkout (Date.fromCalendarDate 2022 Time.Mar 7))
+                        ]
                     )
 
                 _ ->
@@ -111,8 +114,12 @@ update msg model =
 
                 FetchError err ->
                     case err of
-                        H.BadStatus 401 ->
-                            ( model, refresh url key data.currentUser.refreshToken |> Cmd.map parseLogin )
+                        Http (H.BadStatus 401) ->
+                            let
+                                userApi =
+                                    User.api url key
+                            in
+                            ( model, userApi.refreshAuth data.currentUser.refreshToken |> Task.attempt parseLogin )
 
                         _ ->
                             log Error ("error encountered" ++ parseError err) model
@@ -122,11 +129,7 @@ update msg model =
 
                 Selected day ->
                     ( Authenticated { data | today = day, workout = OrderedDict.empty, form = emptyForm }
-                    , let
-                        authedApi =
-                            api url key data.currentUser
-                      in
-                      Cmd.map parseWorkout (authedApi.get day)
+                    , Task.attempt parseWorkout (data.api.getWorkout day)
                     )
 
                 CreateFormToggled ->
@@ -144,35 +147,28 @@ update msg model =
                 UpdatedSetReps index reps ->
                     Authenticated { data | form = newSetReps index reps data.form } |> noOp
 
-                ClickedCreateExercise ->
-                    ( model, Cmd.map CreateNewExercise <| generateExerciseID )
-
-                CreateNewExercise uuid ->
-                    ( model, data.api.insert (newExerciseBody uuid data) |> Cmd.map parseInsertResults )
+                CreateNewExercise ->
+                    ( model, Task.attempt parseInsertResults (data.api.insert (newExerciseBody data)) )
 
                 InsertError err ->
                     log Error ("Error while inserting exercise log " ++ err) model
 
                 LogSet id set ->
-                    ( model, data.api.logSet id set |> Cmd.map parseInsertResults )
+                    ( model, Task.attempt parseInsertResults (data.api.logSet id set) )
 
                 LoggedSet _ _ ->
                     log Info "In the future we will grey out logged sets" model
 
                 DeleteExercise id ->
-                    ( model, data.api.deleteExercise id (Date.fromCalendarDate 2022 Time.Mar 7) |> Cmd.map parseInsertResults )
+                    ( model, Task.attempt parseInsertResults (data.api.deleteExercise id (Date.fromCalendarDate 2022 Time.Mar 7)) )
 
                 ClearForm ->
                     ( Authenticated { data | form = emptyForm }
-                    , let
-                        authedApi =
-                            api url key data.currentUser
-                      in
-                      Cmd.map parseWorkout (authedApi.get data.today)
+                    , Task.attempt parseWorkout (data.api.getWorkout data.today)
                     )
 
 
-parseWorkout : Result H.Error Workout -> Msg
+parseWorkout : Result RequestError Workout -> Msg
 parseWorkout result =
     case result of
         Ok workout ->
@@ -182,7 +178,7 @@ parseWorkout result =
             FetchError err
 
 
-parseLogin : Result H.Error AuthenticatedUser -> Msg
+parseLogin : Result RequestError AuthenticatedUser -> Msg
 parseLogin result =
     case result of
         Ok user ->
@@ -192,10 +188,10 @@ parseLogin result =
             FailedRefresh err
 
 
-parseError : H.Error -> String
+parseError : RequestError -> String
 parseError error =
     case error of
-        H.BadBody body ->
+        Http (H.BadBody body) ->
             "Encountered bad body error with body " ++ body
 
         _ ->
@@ -217,18 +213,15 @@ dateToString date =
     format "EEE MMMM d y" date
 
 
-newExerciseBody : String -> Data -> InsertExerciseRequest
-newExerciseBody id data =
-    { id = id
-    , payload = 
-        { exercise = createNew data.form
-        , order = List.length <| OrderedDict.keys data.workout
-        , day = weekday data.today
-        }
+newExerciseBody : Data -> InsertPayload
+newExerciseBody data =
+    { exercise = createNew data.form
+    , order = List.length <| OrderedDict.keys data.workout
+    , day = weekday data.today
     }
 
 
-parseInsertResults : Result H.Error () -> Msg
+parseInsertResults : Result RequestError () -> Msg
 parseInsertResults result =
     case result of
         Ok () ->
@@ -446,7 +439,7 @@ viewForm form =
                     ]
                 , div [] [ viewSetForm form ]
                 , div [ class "d-flex justify-content-center" ]
-                    [ button [ class "btn btn-outline-dark mx-auto", style "margin-top" "30px", style "width" "50%", onClick ClickedCreateExercise ]
+                    [ button [ class "btn btn-outline-dark mx-auto", style "margin-top" "30px", style "width" "50%", onClick CreateNewExercise ]
                         [ text "Create set!" ]
                     ]
                 ]

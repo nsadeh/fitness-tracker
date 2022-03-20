@@ -1,18 +1,14 @@
 module Pages.Login exposing (..)
 
-import Api.Supabase exposing (AuthenticatedUser)
-import Api.User exposing (LoginInfo, encodeUser)
+import Api.Supabase exposing (AuthenticatedUser, key, url)
+import Api.User exposing (LoginInfo, api)
 import Html exposing (Html, button, div, h1, input, text)
 import Html.Attributes exposing (class, placeholder, style, type_)
 import Html.Events exposing (onClick, onInput)
 import Http
-import Toast
+import Task
 import Utils.Log exposing (LogType(..), log)
-import Api.Supabase exposing (url)
-import Api.Supabase exposing (key)
-import Json.Encode as E
-import Api.User exposing (storeUser)
-import Utils.Log exposing (logCmd)
+import Api.Supabase exposing (RequestError)
 
 
 type alias Model =
@@ -34,7 +30,7 @@ type Msg
     = EnteredEmail String
     | EnteredPassword String
     | SubmittedLogin
-    | LoginFailed Http.Error
+    | LoginFailed RequestError
     | LoginSucceeded AuthenticatedUser
     | SubmittedRegistration
 
@@ -59,20 +55,23 @@ update msg model =
 
         SubmittedRegistration ->
             log Info "Not taking new users" model
-            -- let
-            --     tray = Toast.tray
-            --     toast = Toast.add tray (Toast.expireIn 2000 "We are currently not accepting new users. Please email nnnsadeh@gmail.com to be let in")
-            --     updateToast = Toast.update Toast.Msg tray
-            -- in
-            
-            -- log Info "We are currently not accepting new users. Please email nnnsadeh@gmail.com to be let in" model
+
+
+
+-- let
+--     tray = Toast.tray
+--     toast = Toast.add tray (Toast.expireIn 2000 "We are currently not accepting new users. Please email nnnsadeh@gmail.com to be let in")
+--     updateToast = Toast.update Toast.Msg tray
+-- in
+-- log Info "We are currently not accepting new users. Please email nnnsadeh@gmail.com to be let in" model
 
 
 login : LoginInfo -> Cmd Msg
 login info =
     let
+        userApi = api url key
         response =
-            Api.User.login url key info
+            userApi.login info
 
         toLoginCommand =
             \resp ->
@@ -83,7 +82,7 @@ login info =
                     Err error ->
                         LoginFailed error
     in
-    Cmd.map toLoginCommand response
+    Task.attempt toLoginCommand response
 
 
 printError : Http.Error -> String

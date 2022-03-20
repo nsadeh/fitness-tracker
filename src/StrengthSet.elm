@@ -1,7 +1,6 @@
 module StrengthSet exposing (..)
 import Json.Encode as E
 import Json.Decode as D
-import Array
 
 type alias StrengthSet =
     { reps : Int

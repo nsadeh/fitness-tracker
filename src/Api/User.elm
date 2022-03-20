@@ -1,29 +1,71 @@
-port module Api.User exposing (..)
+port module Api.User exposing (API, api, LoginInfo, storeUser, getUser)
 
-import Api.Supabase exposing (AuthenticatedUser, UnauthenticatedRequest)
-import Http as H exposing (request)
+import Api.Supabase exposing (AuthenticatedUser, RequestError(..), UnauthenticatedRequest)
+import Http as H
 import Json.Decode as D
 import Json.Encode as E
+import Platform exposing (Task)
 
 
-type alias LoginInfo =
-    { email : String
-    , password : String
+
+-- API --
+
+
+type alias API =
+    { login : LoginInfo -> Task RequestError AuthenticatedUser
+    , refreshAuth : String -> Task RequestError AuthenticatedUser
     }
 
-type RefreshedUser = RefreshedUser AuthenticatedUser
+
+api : Url -> ApiKey -> API
+api url apiKey =
+    { login = login url apiKey
+    , refreshAuth = refresh url apiKey
+    }
 
 
-type alias Url =
-    String
+-- Implementation --
 
 
-type alias ApiKey =
-    String
+login : UnauthenticatedRequest LoginInfo AuthenticatedUser
+login url apiKey loginInfo =
+    H.task
+        { method = "POST"
+        , headers =
+            [ H.header "apikey" apiKey
+            ]
+        , url = url ++ "/auth/v1/token?grant_type=password"
+        , body = H.jsonBody (encode loginInfo)
+        , resolver = H.stringResolver userResolver
+        , timeout = Nothing
+        }
+
+
+refresh : UnauthenticatedRequest String AuthenticatedUser
+refresh url key refreshToken =
+    H.task
+        { method = "POST"
+        , headers =
+            [ H.header "apikey" key
+            , H.header "Content-Type" "application/json"
+            ]
+        , url = url ++ "/auth/v1/token?grant_type=refresh_token"
+        , body = H.jsonBody (E.object (List.singleton ( "refresh_token", E.string refreshToken )))
+        , resolver = H.stringResolver userResolver
+        , timeout = Nothing
+        }
 
 
 
--- Functions --
+-- Decoders/Encoders --
+
+
+decodeUser : D.Decoder AuthenticatedUser
+decodeUser =
+    D.map3 AuthenticatedUser
+        (D.at [ "user", "id" ] D.string)
+        (D.field "access_token" D.string)
+        (D.field "refresh_token" D.string)
 
 
 encode : LoginInfo -> E.Value
@@ -43,12 +85,56 @@ encodeUser user =
         ]
 
 
-decodeUser : D.Decoder AuthenticatedUser
-decodeUser =
-    D.map3 AuthenticatedUser
-        (D.at [ "user", "id" ] D.string)
-        (D.field "access_token" D.string)
-        (D.field "refresh_token" D.string)
+
+-- Resolvers --
+
+
+userResolver : H.Response String -> Result RequestError AuthenticatedUser
+userResolver response =
+    case response of
+        H.GoodStatus_ _ user ->
+            D.decodeString decodeUser user
+                |> Result.mapError Parsing
+
+        _ ->
+            Err (Http H.NetworkError)
+
+
+
+-- Types --
+
+
+type alias LoginInfo =
+    { email : String
+    , password : String
+    }
+
+
+type RefreshedUser
+    = RefreshedUser AuthenticatedUser
+
+
+type alias Url =
+    String
+
+
+type alias ApiKey =
+    String
+
+
+
+-- local storage --
+
+
+storeUser : AuthenticatedUser -> Cmd msg
+storeUser user =
+    encodeUser user
+        |> setStorage
+
+
+getUser : E.Value -> Result D.Error AuthenticatedUser
+getUser flags =
+    D.decodeValue decodeFromLS flags
 
 
 decodeFromLS : D.Decoder AuthenticatedUser
@@ -57,54 +143,6 @@ decodeFromLS =
         (D.field "user_id" D.string)
         (D.field "access_token" D.string)
         (D.field "refresh_token" D.string)
-
-
-type alias RawUser =
-    { id : String
-    }
-
-
-decodeId : D.Decoder RawUser
-decodeId =
-    D.map RawUser (D.field "id" D.string)
-
-
-login : UnauthenticatedRequest LoginInfo AuthenticatedUser
-login url apiKey loginInfo =
-    H.request
-        { method = "POST"
-        , headers =
-            [ H.header "apikey" apiKey
-            ]
-        , url = url ++ "/auth/v1/token?grant_type=password"
-        , body = H.jsonBody (encode loginInfo)
-        , expect = H.expectJson identity decodeUser
-        , timeout = Nothing
-        , tracker = Nothing
-        }
-
-refresh : UnauthenticatedRequest String AuthenticatedUser
-refresh url key refreshToken = H.request
-    { method = "POST"
-    , headers = 
-        [ H.header "apikey" key
-        , H.header "Content-Type" "application/json"
-        ]
-    , url = url ++ "/auth/v1/token?grant_type=refresh_token"
-    , body = H.jsonBody (E.object (List.singleton ("refresh_token", E.string refreshToken)))
-    , expect = H.expectJson identity decodeUser
-    , timeout = Nothing
-    , tracker = Nothing
-    }
-
-storeUser : AuthenticatedUser -> Cmd msg
-storeUser user =
-    encodeUser user
-        |> setStorage
-
-getUser: E.Value -> Result D.Error AuthenticatedUser
-getUser flags = D.decodeValue decodeFromLS flags
-    
 
 
 port setStorage : E.Value -> Cmd msg
