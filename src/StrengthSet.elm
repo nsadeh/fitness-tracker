@@ -17,6 +17,13 @@ type alias StrengthExercise =
 emptySet : StrengthSet 
 emptySet = { reps = 0, weight = 0.0 }
 
+emptyExercise : StrengthExercise
+emptyExercise = 
+    { name = ""
+    , sets = []
+    , expanded = False
+    }
+
 encodeSet: StrengthSet -> E.Value
 encodeSet set = E.object
     [ ("weight", E.float set.weight)

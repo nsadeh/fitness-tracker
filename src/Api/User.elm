@@ -1,6 +1,6 @@
-port module Api.User exposing (API, api, LoginInfo, storeUser, getUser)
+port module Api.User exposing (API, LoginInfo, api, getUser, storeUser)
 
-import Api.Supabase exposing (AuthenticatedUser, RequestError(..), UnauthenticatedRequest)
+import Api.Supabase exposing (AuthenticatedUser, RequestError(..), UnauthenticatedRequest, formatError)
 import Http as H
 import Json.Decode as D
 import Json.Encode as E
@@ -22,6 +22,7 @@ api url apiKey =
     { login = login url apiKey
     , refreshAuth = refresh url apiKey
     }
+
 
 
 -- Implementation --
@@ -91,13 +92,14 @@ encodeUser user =
 
 userResolver : H.Response String -> Result RequestError AuthenticatedUser
 userResolver response =
-    case response of
-        H.GoodStatus_ _ user ->
-            D.decodeString decodeUser user
-                |> Result.mapError Parsing
-
-        _ ->
-            Err (Http H.NetworkError)
+    let
+        decode =
+            \user ->
+                D.decodeString decodeUser user
+                    |> Result.mapError Parsing
+    in
+    formatError response
+        |> Result.andThen decode
 
 
 
@@ -108,10 +110,6 @@ type alias LoginInfo =
     { email : String
     , password : String
     }
-
-
-type RefreshedUser
-    = RefreshedUser AuthenticatedUser
 
 
 type alias Url =

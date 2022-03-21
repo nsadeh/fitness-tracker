@@ -1,8 +1,7 @@
-module Api.Exercises exposing (API, api, InsertPayload, DeleteExerciseRequest, LogSetRequest)
+module Api.Exercises exposing (API, DeleteExerciseRequest, InsertPayload, LogSetRequest, api)
 
-import Api.Supabase exposing (ApiKey, AuthenticatedRequest, AuthenticatedUser, RequestError(..), Url)
+import Api.Supabase exposing (ApiKey, AuthenticatedRequest, AuthenticatedUser, RequestError(..), Url, formatError)
 import Date exposing (Date, Weekday, numberToWeekday, weekdayToNumber)
-import Dict exposing (Dict)
 import Http as H
 import Json.Decode as D
 import Json.Decode.Extra exposing (..)
@@ -12,7 +11,7 @@ import Result as Result
 import StrengthSet exposing (StrengthExercise, StrengthSet, decodeExercise, encodeExercise, encodeSet)
 import Task
 import Time
-import Utils.OrderedDict exposing (empty, insert)
+import Utils.OrderedDict exposing (OrderedDict, empty, filter, insert, map, remove)
 import Workout exposing (Workout)
 
 
@@ -42,6 +41,7 @@ api url key user =
     }
 
 
+
 -- Implementation --
 
 
@@ -65,9 +65,10 @@ getExercises url key user date =
             Date.weekday date
     in
     rows
-        |> mapTaskResult (List.foldl foldRow Dict.empty)
-        |> mapTaskResult (Dict.get (weekdayToNumber day))
-        |> mapTaskResult (Maybe.withDefault empty)
+        |> mapTaskResult (List.foldl foldRow empty)
+        |> mapTaskResult (filter (\_ tuple -> Tuple.first tuple == weekdayToNumber day))
+        |> mapTaskResult (map (\_ tuple -> Tuple.second tuple))
+
 
 insertJournalEntry : AuthenticatedRequest ( String, Action ) ()
 insertJournalEntry url key user ( id, action ) =
@@ -78,7 +79,7 @@ insertJournalEntry url key user ( id, action ) =
                     encodeInsertRequest request
 
                 Delete request ->
-                    encodeDeleteRequest request
+                    encodeDeleteRequest id request
 
                 LogSet request ->
                     encodeLogSet (LogSetRequest id request)
@@ -96,50 +97,47 @@ insertJournalEntry url key user ( id, action ) =
         }
 
 
-foldRow : JournalRow -> Dict Int Workout -> Dict Int Workout
+foldRow : JournalRow -> OrderedDict String ( Int, StrengthExercise ) -> OrderedDict String ( Int, StrengthExercise )
 foldRow row workouts =
     case row.action of
         Insert request ->
-            let
-                current =
-                    Dict.get (weekdayToNumber request.day) workouts
-                        |> Maybe.withDefault empty
-            in
-            Dict.insert (weekdayToNumber request.day) (insert row.exerciseId request.exercise current) workouts
+            insert row.exerciseId ( weekdayToNumber request.day, request.exercise ) workouts
 
         LogSet _ ->
             workouts
 
         Delete _ ->
-            workouts
+            remove row.exerciseId workouts
 
 
 mapTaskResult : (r -> s) -> Task RequestError r -> Task RequestError s
 mapTaskResult mapper task =
     Task.map mapper task
 
--- Resolvers -- 
+
+
+-- Resolvers --
+
 
 resolveNothing : H.Response String -> Result RequestError ()
 resolveNothing response =
-    case response of
-        H.GoodStatus_ _ _ ->
-            Ok ()
+    Result.map (\_ -> ()) (formatError response)
 
-        _ ->
-            Err H.NetworkError |> Result.mapError Http
 
 resolveRow : H.Response String -> Result RequestError (List JournalRow)
 resolveRow response =
-    case response of
-        H.GoodStatus_ _ body ->
-            D.decodeString (D.list decodeRow) body |> Result.mapError Parsing
+    let
+        decodeJournalEntries =
+            \list ->
+                D.decodeString (D.list decodeRow) list
+                    |> Result.mapError Parsing
+    in
+    formatError response
+        |> Result.andThen decodeJournalEntries
 
-        _ ->
-            Err H.NetworkError |> Result.mapError Http
 
 
--- Decoders/Encoders
+-- Decoders/Encoders --
 
 
 decodeRow : D.Decoder JournalRow
@@ -170,7 +168,7 @@ rowWithAction decoder =
 
 decodeDelete : D.Decoder DeleteExerciseRequest
 decodeDelete =
-    D.map (DeleteExerciseRequest)
+    D.map DeleteExerciseRequest
         (D.field "asOfDate" decodeDate)
 
 
@@ -201,7 +199,7 @@ decodePayload action =
 decodeDate : D.Decoder Date
 decodeDate =
     let
-        mapper =
+        handleError =
             \res ->
                 case res of
                     Ok date ->
@@ -212,7 +210,7 @@ decodeDate =
     in
     D.string
         |> D.map Date.fromIsoString
-        |> D.andThen mapper
+        |> D.andThen handleError
 
 
 encodeInsertRequest : InsertPayload -> E.Value
@@ -233,8 +231,8 @@ encodeLogSet request =
         ]
 
 
-encodeDeleteRequest : DeleteExerciseRequest -> E.Value
-encodeDeleteRequest request =
+encodeDeleteRequest : String -> DeleteExerciseRequest -> E.Value
+encodeDeleteRequest exerciseId request =
     E.object
         [ ( "action_type", E.string "DeleteExercise" )
         , ( "payload"
@@ -242,7 +240,9 @@ encodeDeleteRequest request =
                 [ ( "asOfDate", E.string (Date.toIsoString request.asOf) )
                 ]
           )
+        , ("exercise_id", E.string exerciseId)
         ]
+
 
 
 -- Types --
@@ -289,11 +289,3 @@ type alias RawJournalRow =
     , actionType : String
     , action : D.Value
     }
-
-
-
-
-
-
-
-

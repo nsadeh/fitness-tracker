@@ -22,7 +22,7 @@ import WorkoutCreator exposing (WorkoutCreator, createNew, emptyForm, newSetReps
 -- MODEL --
 
 
-type alias Data =
+type alias WorkoutState =
     { api : Exercise.API
     , currentUser : AuthenticatedUser
     , workout : OrderedDict String StrengthExercise
@@ -33,10 +33,10 @@ type alias Data =
 
 type Model
     = Unauthenticated
-    | Authenticated Data
+    | Authenticated WorkoutState
 
 
-isEditorToggled : Data -> Bool
+isEditorToggled : WorkoutState -> Bool
 isEditorToggled data =
     data.form.isOpen
 
@@ -70,7 +70,7 @@ type Msg
     | ClearForm
 
 
-updateWorkout : (Workout -> Workout) -> Data -> Data
+updateWorkout : (Workout -> Workout) -> WorkoutState -> WorkoutState
 updateWorkout mapper data =
     { data | workout = mapper data.workout }
 
@@ -90,11 +90,11 @@ update msg model =
                         , currentUser = user
                         , workout = OrderedDict.empty
                         , form = emptyForm
-                        , today = Date.fromCalendarDate 2022 Time.Mar 7
+                        , today = Date.fromCalendarDate 2022 Time.Jan 1
                         }
                     , Cmd.batch
                         [ storeUser user
-                        , Task.attempt parseWorkout (exerciseApi.getWorkout (Date.fromCalendarDate 2022 Time.Mar 7))
+                        , Task.perform Selected Date.today
                         ]
                     )
 
@@ -160,7 +160,11 @@ update msg model =
                     log Info "In the future we will grey out logged sets" model
 
                 DeleteExercise id ->
-                    ( model, Task.attempt parseInsertResults (data.api.deleteExercise id (Date.fromCalendarDate 2022 Time.Mar 7)) )
+                    ( model
+                    , Date.today
+                        |> Task.andThen (data.api.deleteExercise id)
+                        |> Task.attempt parseInsertResults
+                    )
 
                 ClearForm ->
                     ( Authenticated { data | form = emptyForm }
@@ -213,7 +217,7 @@ dateToString date =
     format "EEE MMMM d y" date
 
 
-newExerciseBody : Data -> InsertPayload
+newExerciseBody : WorkoutState -> InsertPayload
 newExerciseBody data =
     { exercise = createNew data.form
     , order = List.length <| OrderedDict.keys data.workout

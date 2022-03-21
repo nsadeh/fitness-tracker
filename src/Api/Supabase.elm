@@ -19,6 +19,14 @@ type RequestError
     = Parsing D.Error
     | Http H.Error
 
+formatError: H.Response m -> Result RequestError m
+formatError response = case response of 
+    H.GoodStatus_ _ body -> Ok body
+    H.BadUrl_ u -> Err ( Http ( H.BadUrl u))
+    H.Timeout_ -> Err (Http H.Timeout )
+    H.BadStatus_ metadata _ -> Err (Http (H.BadStatus metadata.statusCode))
+    H.NetworkError_ -> Err (Http (H.NetworkError))
+
 type alias ApiKey =
     String
 
