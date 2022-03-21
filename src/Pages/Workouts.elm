@@ -4,10 +4,11 @@ import Api.Exercises as Exercise exposing (InsertPayload)
 import Api.Supabase exposing (AuthenticatedUser, RequestError(..), key, url)
 import Api.User as User exposing (storeUser)
 import Date exposing (Date, Unit(..), format, weekday)
-import Html exposing (Html, button, div, h2, h3, h4, input, small, text)
+import Html exposing (Attribute, Html, button, div, h2, h3, h4, input, small, text)
 import Html.Attributes exposing (checked, class, placeholder, style, type_, value)
-import Html.Events exposing (onCheck, onClick, onInput)
+import Html.Events exposing (onCheck, onClick, onInput, stopPropagationOn)
 import Http as H
+import Json.Decode
 import Maybe exposing (withDefault)
 import StrengthSet exposing (StrengthExercise, StrengthSet)
 import Task
@@ -65,6 +66,7 @@ type Msg
     | InsertError String
     | CreateNewExercise
     | LogSet String StrengthSet
+    | LogSets String (List StrengthSet)
     | LoggedSet String Int
     | DeleteExercise String
     | ClearForm
@@ -155,6 +157,9 @@ update msg model =
 
                 LogSet id set ->
                     ( model, Task.attempt parseInsertResults (data.api.logSet id set) )
+
+                LogSets id sets ->
+                    ( model, Cmd.batch (List.map (\set -> update (LogSet id set) model) sets |> List.map Tuple.second) )
 
                 LoggedSet _ _ ->
                     log Info "In the future we will grey out logged sets" model
@@ -333,10 +338,10 @@ viewExercises id exercise =
                         ]
                     ]
                 , div [ class "container-fluid col-sm-2" ]
-                    [ button [ type_ "button", class "btn btn-outline-dark float-right" ]
+                    [ button [ type_ "button", class "btn btn-outline-dark float-right", disableClickPropagation (LogSets id exercise.sets ) ]
                         [ text "Log all!"
                         ]
-                    , button [ type_ "button", class "btn btn-outline-dark float-right", onClick (DeleteExercise id) ]
+                    , button [ type_ "button", class "btn btn-outline-dark float-right", disableClickPropagation (DeleteExercise id) ]
                         [ text "Delete!"
                         ]
                     ]
@@ -345,6 +350,16 @@ viewExercises id exercise =
         , input [ type_ "checkbox", class "fake-checkbox", checked exercise.expanded, onCheck (\_ -> Toggled exercise.name) ] []
         , div [ class "slide" ] (List.indexedMap (viewSet id) exercise.sets)
         ]
+
+
+preventDefault : msg -> ( msg, Bool )
+preventDefault msg =
+    ( msg, True )
+
+
+disableClickPropagation : Msg -> Attribute Msg
+disableClickPropagation msg =
+    stopPropagationOn "click" (Json.Decode.map preventDefault (Json.Decode.succeed msg))
 
 
 viewSet : String -> Int -> StrengthSet -> Html Msg

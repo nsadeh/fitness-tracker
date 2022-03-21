@@ -216,9 +216,14 @@ decodeDate =
 encodeInsertRequest : InsertPayload -> E.Value
 encodeInsertRequest request =
     E.object
-        [ ( "order", E.int request.order )
-        , ( "day", E.int (weekdayToNumber request.day) )
-        , ( "exercise", encodeExercise request.exercise )
+        [ ( "action_type", E.string "InsertNewExercise" )
+        , ( "payload"
+          , E.object
+                [ ( "order", E.int request.order )
+                , ( "day", E.int (weekdayToNumber request.day) )
+                , ( "exercise", encodeExercise request.exercise )
+                ]
+          )
         ]
 
 
@@ -240,7 +245,7 @@ encodeDeleteRequest exerciseId request =
                 [ ( "asOfDate", E.string (Date.toIsoString request.asOf) )
                 ]
           )
-        , ("exercise_id", E.string exerciseId)
+        , ( "exercise_id", E.string exerciseId )
         ]
 
 
