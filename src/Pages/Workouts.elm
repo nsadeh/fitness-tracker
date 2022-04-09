@@ -4,18 +4,19 @@ import Api.Exercises as Exercise exposing (InsertPayload)
 import Api.Supabase exposing (AuthenticatedUser, RequestError(..), key, url)
 import Api.User as User exposing (storeUser)
 import Date exposing (Date, Unit(..), format, weekday)
-import Html exposing (Attribute, Html, button, div, h2, h3, h4, input, small, text)
-import Html.Attributes exposing (checked, class, placeholder, style, type_, value)
+import Html exposing (Attribute, Html, button, div, h2, h3, h4, input, label, small, span, text)
+import Html.Attributes exposing (checked, class, for, id, placeholder, style, type_, value)
 import Html.Events exposing (onCheck, onClick, onInput, stopPropagationOn)
 import Http as H
 import Json.Decode
 import Maybe exposing (withDefault)
-import StrengthSet exposing (StrengthExercise, StrengthSet)
+import Set exposing (Set)
+import StrengthSet exposing (StrengthExercise, StrengthSet, addLastSet, removeSet)
 import Task
 import Time
 import Utils.Log exposing (LogType(..), log, logCmd)
 import Utils.OrderedDict as OrderedDict exposing (OrderedDict)
-import Workout exposing (Workout, expandExercise)
+import Workout exposing (Workout)
 import WorkoutCreator exposing (WorkoutCreator, createNew, emptyForm, newSetReps, newSetWeight, toggleCreator, updateName, updateNumSets)
 
 
@@ -27,6 +28,8 @@ type alias WorkoutState =
     { api : Exercise.API
     , currentUser : AuthenticatedUser
     , workout : OrderedDict String StrengthExercise
+    , open : Set String
+    , workoutEditor : Maybe ( String, StrengthExercise )
     , form : WorkoutCreator
     , today : Date
     }
@@ -58,6 +61,12 @@ type Msg
     | FailedRefresh RequestError
     | Toggled String
     | Selected Date
+    | OpenWorkoutEditor String
+    | AddSetToWorkout
+    | RemoveSetFromEditor Int
+    | CloseWorkoutEditor
+    | EditWorkoutSets String (List StrengthSet)
+    | NoOp
     | CreateFormToggled
     | SetNumberEntered Int
     | ChangedWorkoutName String
@@ -91,6 +100,8 @@ update msg model =
                         { api = exerciseApi
                         , currentUser = user
                         , workout = OrderedDict.empty
+                        , open = Set.empty
+                        , workoutEditor = Nothing
                         , form = emptyForm
                         , today = Date.fromCalendarDate 2022 Time.Jan 1
                         }
@@ -126,13 +137,44 @@ update msg model =
                         _ ->
                             log Error ("error encountered" ++ parseError err) model
 
-                Toggled name ->
-                    Authenticated (updateWorkout (expandExercise name) data) |> log Info ("toggled " ++ name)
+                Toggled id ->
+                    let
+                        isToggled =
+                            Set.member id data.open
+                    in
+                    (if isToggled then
+                        Authenticated { data | open = Set.remove id data.open }
+
+                     else
+                        Authenticated { data | open = Set.insert id data.open }
+                    )
+                        |> noOp
 
                 Selected day ->
                     ( Authenticated { data | today = day, workout = OrderedDict.empty, form = emptyForm }
                     , Task.attempt parseWorkout (data.api.getWorkout day)
                     )
+
+                OpenWorkoutEditor exerciseID ->
+                    Authenticated { data | workoutEditor = Maybe.map (\ex -> ( exerciseID, ex )) (OrderedDict.get exerciseID data.workout) } |> noOp
+
+                CloseWorkoutEditor ->
+                    ( Authenticated { data | workoutEditor = Nothing }
+                    , Task.attempt parseWorkout (data.api.getWorkout data.today)
+                    )
+
+                RemoveSetFromEditor index ->
+                    Authenticated { data | workoutEditor = Maybe.map (\editor -> ( Tuple.first editor, removeSet index (Tuple.second editor) )) data.workoutEditor } |> noOp
+
+                EditWorkoutSets exerciseID sets ->
+                    let
+                        edit =
+                            data.api.editSets exerciseID sets
+                    in
+                    ( model, Task.attempt parseEditResult edit )
+
+                NoOp ->
+                    ( model, Cmd.none )
 
                 CreateFormToggled ->
                     Authenticated { data | form = toggleCreator data.form } |> noOp
@@ -170,6 +212,9 @@ update msg model =
                         |> Task.andThen (data.api.deleteExercise id)
                         |> Task.attempt parseInsertResults
                     )
+
+                AddSetToWorkout ->
+                    Authenticated { data | workoutEditor = Maybe.map (\editor -> ( Tuple.first editor, addLastSet (Tuple.second editor) )) data.workoutEditor } |> noOp
 
                 ClearForm ->
                     ( Authenticated { data | form = emptyForm }
@@ -240,6 +285,16 @@ parseInsertResults result =
             InsertError "Failed to insert exercise"
 
 
+parseEditResult : Result RequestError () -> Msg
+parseEditResult result =
+    case result of
+        Ok () ->
+            CloseWorkoutEditor
+
+        _ ->
+            InsertError "Failed to edit exercise"
+
+
 
 -- VIEW --
 
@@ -252,9 +307,12 @@ view model =
 
         Authenticated data ->
             let
+                isToggled =
+                    \exerciseId -> Set.member exerciseId data.open
+
                 exerciseList =
                     data.workout
-                        |> OrderedDict.map viewExercises
+                        |> OrderedDict.map (viewExercises isToggled)
                         |> OrderedDict.values
             in
             div [ style "padding" "20px" ]
@@ -280,11 +338,15 @@ view model =
                             ]
                         ]
                     ]
+                , Maybe.map
+                    viewExerciseEditor
+                    data.workoutEditor
+                    |> Maybe.withDefault (div [] [])
                 ]
 
 
-viewExercises : String -> StrengthExercise -> Html Msg
-viewExercises id exercise =
+viewExercises : (String -> Bool) -> String -> StrengthExercise -> Html Msg
+viewExercises expanded id exercise =
     let
         ( weights, reps ) =
             getSetRanges exercise.sets
@@ -293,7 +355,7 @@ viewExercises id exercise =
         [ div
             [ class
                 ("list-group-item bg-light border-5"
-                    ++ (if exercise.expanded then
+                    ++ (if expanded id then
                             ""
 
                         else
@@ -303,12 +365,12 @@ viewExercises id exercise =
             , onClick (Toggled id)
             ]
             [ div [ class "row justify-content-between no-gutters", style "white-space" "nowrap" ]
-                [ div [ class "container-fluid col-sm-2" ]
-                    [ h4 []
+                [ div [ class "container-fluid col-md" ]
+                    [ h4 [ class "flex-shrink-1", style "font-size-adjust" "0.3" ]
                         [ text exercise.name
                         ]
                     ]
-                , div [ class "container-fluid col-sm-2" ]
+                , div [ class "container-fluid col-sm-1" ]
                     [ h4 []
                         [ text (String.fromInt (List.length exercise.sets))
                         , small [ style "font-size" "0.5em" ]
@@ -316,7 +378,7 @@ viewExercises id exercise =
                             ]
                         ]
                     ]
-                , div [ class "col-sm-2" ]
+                , div [ class "col-sm-1" ]
                     [ h4 []
                         [ text weights
                         , small [ style "font-size" "0.5em" ]
@@ -324,7 +386,7 @@ viewExercises id exercise =
                             ]
                         ]
                     ]
-                , div [ class "col-sm-2" ]
+                , div [ class "col-sm-1" ]
                     [ h4 []
                         [ text reps
                         , small [ style "font-size" "0.5em" ]
@@ -333,33 +395,31 @@ viewExercises id exercise =
                         ]
                     ]
                 , div [ class "container-fluid col-sm-2" ]
-                    [ button [ type_ "button", class "btn btn-outline-dark float-center" ]
-                        [ text "Edit"
-                        ]
-                    ]
-                , div [ class "container-fluid col-sm-2" ]
-                    [ button [ type_ "button", class "btn btn-outline-dark float-right", disableClickPropagation (LogSets id exercise.sets ) ]
+                    [ button [ type_ "button", class "btn btn-outline-primary float-right", overrideOnClickWith (LogSets id exercise.sets) ]
                         [ text "Log all!"
                         ]
-                    , button [ type_ "button", class "btn btn-outline-dark float-right", disableClickPropagation (DeleteExercise id) ]
-                        [ text "Delete!"
+                    , button [ type_ "button", class "btn btn-outline-danger float-right", style "margin-right" "10px", overrideOnClickWith (DeleteExercise id) ]
+                        [ text "Delete"
+                        ]
+                    , button [ type_ "button", class "btn btn-outline-dark float-right", style "margin-right" "10px", overrideOnClickWith (OpenWorkoutEditor id) ]
+                        [ text "Edit"
                         ]
                     ]
                 ]
             ]
-        , input [ type_ "checkbox", class "fake-checkbox", checked exercise.expanded, onCheck (\_ -> Toggled exercise.name) ] []
+        , input [ type_ "checkbox", class "fake-checkbox", checked (expanded id), onCheck (\_ -> Toggled id) ] []
         , div [ class "slide" ] (List.indexedMap (viewSet id) exercise.sets)
         ]
 
 
-preventDefault : msg -> ( msg, Bool )
-preventDefault msg =
+disableDefault : msg -> ( msg, Bool )
+disableDefault msg =
     ( msg, True )
 
 
-disableClickPropagation : Msg -> Attribute Msg
-disableClickPropagation msg =
-    stopPropagationOn "click" (Json.Decode.map preventDefault (Json.Decode.succeed msg))
+overrideOnClickWith : Msg -> Attribute Msg
+overrideOnClickWith msg =
+    stopPropagationOn "click" (Json.Decode.map disableDefault (Json.Decode.succeed msg))
 
 
 viewSet : String -> Int -> StrengthSet -> Html Msg
@@ -446,17 +506,30 @@ viewForm form =
                         [ h4 [] [ text "Name: " ]
                         ]
                     , div [ class "col" ]
-                        [ input [ class "form-control", placeholder "Name", onInput ChangedWorkoutName ] [] ]
+                        [ input [ class "form-control", placeholder "Name", onInput ChangedWorkoutName, value form.name ] [] ]
                     ]
                 , div [ class "container-fluid row" ]
                     [ div [ class "col-sm-2" ]
                         [ h4 [] [ text "Num sets: " ]
                         ]
                     , div [ class "col" ]
-                        [ input [ class "form-control", placeholder "Sets", type_ "number", onInput (\count -> SetNumberEntered (String.toInt count |> withDefault 0)) ] []
+                        [ input
+                            [ class "form-control"
+                            , placeholder "Sets"
+                            , type_ "number"
+                            , value
+                                (if form.numSets == 0 then
+                                    ""
+
+                                 else
+                                    String.fromInt form.numSets
+                                )
+                            , onInput (\count -> SetNumberEntered (String.toInt count |> withDefault 0))
+                            ]
+                            []
                         ]
                     ]
-                , div [] [ viewSetForm form ]
+                , div [ style "overflow" "scroll", style "max-height" "300px" ] [ viewSetForm form ]
                 , div [ class "d-flex justify-content-center" ]
                     [ button [ class "btn btn-outline-dark mx-auto", style "margin-top" "30px", style "width" "50%", onClick CreateNewExercise ]
                         [ text "Create set!" ]
@@ -485,5 +558,75 @@ viewFormSingleSet index =
         , div [ class "col-sm-4 d-flex flow-row" ]
             [ h4 [ style "margin-right" "10px" ] [ text "Reps: " ]
             , input [ class "form-control", placeholder "Reps", type_ "number", onInput (\reps -> UpdatedSetReps index (String.toInt reps |> withDefault 0)) ] []
+            ]
+        ]
+
+
+viewExerciseEditor : ( String, StrengthExercise ) -> Html Msg
+viewExerciseEditor ( exerciseId, exercise ) =
+    div
+        [ style "position" "absolute"
+        , style "top" "0"
+        , style "bottom" "0"
+        , style "right" "0"
+        , style "left" "0"
+        , style "display" "flex"
+        , style "align-items" "center"
+        , style "justify-content" "center"
+        , style "background-color" "rgba(33, 43, 54, 0.4)"
+        , onClick CloseWorkoutEditor
+        ]
+        [ div
+            [ class "px-3"
+            , style "border-style" "solid"
+            , style "border-radius" "3px"
+            , style "border-color" "white"
+            , style "background-color" "white"
+            , style "height" "500px"
+            , style "width" "440px"
+            , style "display" "flex"
+            , style "flex-direction" "column"
+            , style "align-items" "center"
+            , overrideOnClickWith NoOp
+            ]
+            [ h2 [ style "margin-bottom" "15px", style "margin-top" "15px" ]
+                [ text ("Edit " ++ exercise.name)
+                ]
+            , div
+                [ class "container mx-auto"
+                , style "justify-content" "center"
+                , style "padding" "25px"
+                , style "overflow" "scroll"
+                ]
+                (List.indexedMap viewEditFormLine exercise.sets)
+            , div [ class "d-flex", style "width" "100%", style "margin-top" "15px", style "margin-bottom" "15px" ]
+                [ button [ class "btn btn-outline-dark mx-auto bg-light", style "width" "90%", overrideOnClickWith AddSetToWorkout ]
+                    [ text "Add set"
+                    ]
+                ]
+            , div [ class "d-flex mt-auto", style "margin-bottom" "15px" ]
+                [ button [ class "btn btn-outline-primary", overrideOnClickWith (EditWorkoutSets exerciseId exercise.sets) ] [ text "Submit" ]
+                ]
+            ]
+        ]
+
+
+viewEditFormLine : Int -> StrengthSet -> Html Msg
+viewEditFormLine index set =
+    div [ class "row mx-auto justify-content-between form-inline", style "margin-bottom" "5px" ]
+        [ label [ for "reps-editor", class "fs-1 fw-bold" ]
+            [ span [ class "fs-1 fw-bold" ]
+                [ text (String.fromInt (index + 1) ++ ".") ]
+            ]
+        , div [ class "row" ]
+            [ input [ id "reps-editor", class "form-control", style "margin-right" "7px", style "width" "75px", type_ "number", value (String.fromInt set.reps) ] []
+            , label [ for "reps-editor" ] [ text "reps" ]
+            ]
+        , div [ class "row" ]
+            [ input [ class "form-control", style "margin-right" "7px", style "width" "75px", type_ "number", value (String.fromFloat set.weight) ] []
+            , label [ for "reps-editor" ] [ text "lbs" ]
+            ]
+        , div [ class "row" ]
+            [ button [ class "btn btn-outline-danger", type_ "button", overrideOnClickWith (RemoveSetFromEditor index) ] [ text "Remove" ]
             ]
         ]

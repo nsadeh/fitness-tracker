@@ -78,5 +78,4 @@ createNew : WorkoutCreator -> StrengthSet.StrengthExercise
 createNew form =
     { name = form.name
     , sets = Dict.values form.sets
-    , expanded = False
     }

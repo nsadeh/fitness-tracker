@@ -16,10 +16,6 @@ addExercise workout exercise =
         Nothing ->
             OrderedDict.insert exercise.name exercise workout
 
-expandExercise: String -> Workout -> Workout
-expandExercise name workout = 
-    updateExercise name (\exercise -> { exercise | expanded = not exercise.expanded }) workout
-
 
 updateExercise : String -> (StrengthExercise -> StrengthExercise) -> Workout -> Workout
 updateExercise name mapper workout = OrderedDict.update name (Maybe.map mapper) workout

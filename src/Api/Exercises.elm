@@ -8,10 +8,10 @@ import Json.Decode.Extra exposing (..)
 import Json.Encode as E
 import Platform exposing (Task)
 import Result as Result
-import StrengthSet exposing (StrengthExercise, StrengthSet, decodeExercise, encodeExercise, encodeSet)
+import StrengthSet exposing (StrengthExercise, StrengthSet, decodeExercise, decodeSet, encodeExercise, encodeSet)
 import Task
 import Time
-import Utils.OrderedDict exposing (OrderedDict, empty, filter, insert, map, remove)
+import Utils.OrderedDict exposing (OrderedDict, empty, filter, insert, map, remove, update)
 import Workout exposing (Workout)
 
 
@@ -29,6 +29,8 @@ type alias API =
     , insert : InsertPayload -> Task RequestError ()
     , logSet : ExerciseId -> StrengthSet -> Task RequestError ()
     , deleteExercise : ExerciseId -> Date -> Task RequestError ()
+    , editSets : ExerciseId -> List StrengthSet -> Task RequestError ()
+    , editName : ExerciseId -> String -> Task RequestError ()
     }
 
 
@@ -38,6 +40,8 @@ api url key user =
     , insert = \p -> insertJournalEntry url key user ( "", Insert p )
     , logSet = \id set -> insertJournalEntry url key user ( id, LogSet set )
     , deleteExercise = \id date -> insertJournalEntry url key user ( id, Delete (DeleteExerciseRequest date) )
+    , editSets = \id sets -> insertJournalEntry url key user ( id, Edit (ChangeSetsAndReps sets) )
+    , editName = \id name -> insertJournalEntry url key user ( id, Edit (ChangeName name) )
     }
 
 
@@ -83,6 +87,9 @@ insertJournalEntry url key user ( id, action ) =
 
                 LogSet request ->
                     encodeLogSet (LogSetRequest id request)
+
+                Edit request ->
+                    encodeEditRequest id request
     in
     H.task
         { method = "POST"
@@ -108,6 +115,14 @@ foldRow row workouts =
 
         Delete _ ->
             remove row.exerciseId workouts
+
+        Edit changeRequest ->
+            case changeRequest of
+                ChangeName name ->
+                    update row.exerciseId (Maybe.map (\( day, exercise ) -> ( day, { exercise | name = name } ))) workouts
+
+                ChangeSetsAndReps sets ->
+                    update row.exerciseId (Maybe.map (\( day, exercise ) -> ( day, { exercise | sets = sets } ))) workouts
 
 
 mapTaskResult : (r -> s) -> Task RequestError r -> Task RequestError s
@@ -192,6 +207,12 @@ decodePayload action =
         "DeleteExercise" ->
             D.map Delete decodeDelete
 
+        "EditExercise" ->
+            D.map ChangeSetsAndReps (D.list decodeSet) |> D.map Edit
+
+        "ChangeExerciseName" ->
+            D.map ChangeName (D.field "newName" D.string) |> D.map Edit
+
         _ ->
             D.fail ("Failed to decode this action: " ++ action)
 
@@ -249,6 +270,24 @@ encodeDeleteRequest exerciseId request =
         ]
 
 
+encodeEditRequest : String -> ChangeExercise -> E.Value
+encodeEditRequest exerciseId changeRequest =
+    let
+        ( action, payload ) =
+            case changeRequest of
+                ChangeName newName ->
+                    ( "ChangeExerciseName", E.object [ ( "newName", E.string newName ) ] )
+
+                ChangeSetsAndReps newSets ->
+                    ( "EditExercise", E.list encodeSet newSets )
+    in
+    E.object
+        [ ( "action_type", E.string action )
+        , ( "payload", payload )
+        , ( "exercise_id", E.string exerciseId )
+        ]
+
+
 
 -- Types --
 
@@ -271,10 +310,16 @@ type alias InsertPayload =
     }
 
 
+type ChangeExercise
+    = ChangeName String
+    | ChangeSetsAndReps (List StrengthSet)
+
+
 type Action
     = Insert InsertPayload
     | LogSet StrengthSet
     | Delete DeleteExerciseRequest
+    | Edit ChangeExercise
 
 
 type alias JournalRow =
