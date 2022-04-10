@@ -1,4 +1,4 @@
-port module Api.User exposing (API, LoginInfo, api, getUser, storeUser)
+port module Api.User exposing (API, LoginInfo, api, getUser, setEmail, setPassword, storeUser, empty)
 
 import Api.Supabase exposing (AuthenticatedUser, RequestError(..), UnauthenticatedRequest, formatError)
 import Http as H
@@ -112,6 +112,10 @@ type alias LoginInfo =
     }
 
 
+empty =
+    { email = "", password = "" }
+
+
 type alias Url =
     String
 
@@ -141,6 +145,16 @@ decodeFromLS =
         (D.field "user_id" D.string)
         (D.field "access_token" D.string)
         (D.field "refresh_token" D.string)
+
+
+setEmail : String -> LoginInfo -> LoginInfo
+setEmail email info =
+    { info | email = email }
+
+
+setPassword : String -> LoginInfo -> LoginInfo
+setPassword password info =
+    { info | password = password }
 
 
 port setStorage : E.Value -> Cmd msg

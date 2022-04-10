@@ -1,24 +1,28 @@
 module Pages.Login exposing (..)
 
-import Api.Supabase exposing (AuthenticatedUser, key, url)
+import Api.Supabase exposing (AuthenticatedUser, RequestError, key, url)
 import Api.User exposing (LoginInfo, api)
+import Browser.Navigation exposing (Key)
 import Html exposing (Html, button, div, h1, input, text)
 import Html.Attributes exposing (class, placeholder, style, type_)
 import Html.Events exposing (onClick, onInput)
 import Http
 import Task
 import Utils.Log exposing (LogType(..), log)
-import Api.Supabase exposing (RequestError)
+import Api.User exposing (setEmail)
+import Api.User exposing (setPassword)
 
 
 type alias Model =
-    LoginInfo
+    { info : LoginInfo
+    , navKey : Key
+    }
 
 
-empty : Model
-empty =
-    { email = ""
-    , password = ""
+empty : Key -> Model
+empty key =
+    { info = Api.User.empty
+    , navKey = key
     }
 
 
@@ -39,16 +43,16 @@ update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         EnteredEmail email ->
-            ( { model | email = email }, Cmd.none )
+            ( { model | info = setEmail email model.info }, Cmd.none )
 
         EnteredPassword password ->
-            ( { model | password = password }, Cmd.none )
+            ( { model | info = setPassword password model.info }, Cmd.none )
 
         SubmittedLogin ->
-            ( empty, login model )
+            ( { model | info = Api.User.empty }, login model.info )
 
         LoginFailed _ ->
-            ( empty, Cmd.none )
+            ( { model | info = Api.User.empty }, Cmd.none )
 
         LoginSucceeded _ ->
             log Info "This never gets called lol" model
@@ -69,7 +73,9 @@ update msg model =
 login : LoginInfo -> Cmd Msg
 login info =
     let
-        userApi = api url key
+        userApi =
+            api url key
+
         response =
             userApi.login info
 

@@ -28,6 +28,54 @@ emptyExercise =
     }
 
 
+changeRepCount : Int -> StrengthSet -> StrengthSet
+changeRepCount reps set =
+    { set | reps = reps }
+
+
+changeWeight : Float -> StrengthSet -> StrengthSet
+changeWeight weight set =
+    { set | weight = weight }
+
+
+changeRepCountForExercise : Int -> Int -> StrengthExercise -> StrengthExercise
+changeRepCountForExercise index reps exercise =
+    let
+        updatedSets =
+            List.indexedMap
+                (\idx value ->
+                    if idx == index then
+                        changeRepCount reps value
+
+                    else
+                        value
+                )
+                exercise.sets
+    in
+    { exercise | sets = updatedSets }
+
+
+changeWeightForExercise : Int -> Float -> StrengthExercise -> StrengthExercise
+changeWeightForExercise index weight exercise =
+    let
+        updatedSet =
+            List.indexedMap
+                (\idx set ->
+                    if idx == index then
+                        changeWeight weight set
+
+                    else
+                        set
+                )
+                exercise.sets
+    in
+    { exercise | sets = updatedSet }
+
+
+
+-- Encoders/Decoders
+
+
 encodeSet : StrengthSet -> E.Value
 encodeSet set =
     E.object
@@ -65,10 +113,14 @@ addLastSet exercise =
         |> Maybe.map (\set -> { exercise | sets = List.append exercise.sets [ set ] })
         |> Maybe.withDefault exercise
 
+
 removeSet : Int -> StrengthExercise -> StrengthExercise
-removeSet index exercise = 
+removeSet index exercise =
     let
-        before = List.take index exercise.sets
-        after = List.drop (index + 1) exercise.sets
+        before =
+            List.take index exercise.sets
+
+        after =
+            List.drop (index + 1) exercise.sets
     in
-        { exercise | sets = List.append before after }
+    { exercise | sets = List.append before after }
