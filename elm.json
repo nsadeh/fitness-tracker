@@ -16,20 +16,22 @@
             "elm-community/json-extra": "4.3.0",
             "emilianobovetti/elm-toast": "1.0.1",
             "justinmimbs/date": "4.0.1",
+            "marshallformula/elm-swiper": "1.0.2",
             "mdgriffith/elm-ui": "1.1.8"
         },
         "indirect": {
-            "danfishgold/base64-bytes": "1.1.0",
             "elm/bytes": "1.0.8",
             "elm/file": "1.0.5",
             "elm/parser": "1.1.0",
             "elm/virtual-dom": "1.0.2",
-            "rtfeldman/elm-hex": "1.0.0",
             "rtfeldman/elm-iso8601-date-strings": "1.1.4"
         }
     },
     "test-dependencies": {
         "direct": {},
-        "indirect": {}
+        "indirect": {
+            "danfishgold/base64-bytes": "1.1.0",
+            "rtfeldman/elm-hex": "1.0.0"
+        }
     }
 }

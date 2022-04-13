@@ -56,3 +56,39 @@
   padding-left: 300px;
   padding-top: 50px;
 }
+
+.workouts {
+  padding: 20px
+}
+
+/* .buttons {
+  float: right;
+} */
+
+/* .test-media {
+  background-color: aqua;
+} */
+
+@media screen and (max-width: 576px) {
+  .navbar>.btn {
+    display: none;
+  }
+
+  .buttons {
+    justify-content: center !important;
+  }
+
+  .slide {
+    display: none;
+  }
+}
+
+@media screen and (max-width: 768px) {
+  .workouts {
+    padding: 10px
+  }
+
+  .edit-button {
+    display: none;
+  }
+}

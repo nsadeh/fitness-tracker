@@ -13,6 +13,7 @@ import Json.Decode
 import Maybe exposing (withDefault)
 import Set exposing (Set)
 import StrengthSet exposing (StrengthExercise, StrengthSet, addLastSet, changeRepCountForExercise, changeWeightForExercise, removeSet)
+import Swiper
 import Task
 import Time
 import Utils.Log exposing (LogType(..), log, logCmd)
@@ -34,6 +35,7 @@ type alias WorkoutState =
     , form : WorkoutCreator
     , today : Date
     , navKey : Nav.Key
+    , navarSwipeState : Swiper.SwipingState
     }
 
 
@@ -91,6 +93,7 @@ handleSetup msg model =
                         , form = emptyForm
                         , today = Date.fromCalendarDate 2022 Time.Jan 1
                         , navKey = navKey
+                        , navarSwipeState = Swiper.initialSwipingState
                         }
                     , Cmd.batch
                         [ storeUser user
@@ -131,6 +134,7 @@ handleSetup msg model =
 type SelectionMessage
     = Toggled String
     | Selected Date
+    | Swiped Swiper.SwipeEvent
 
 
 handleSelect : SelectionMessage -> Model -> ( Model, Cmd Msg )
@@ -165,6 +169,23 @@ handleSelect msg model =
                     ( Authenticated { data | today = day, workout = OrderedDict.empty, form = emptyForm }
                     , Cmd.batch [ Task.attempt parseWorkout (data.api.getWorkout day), Nav.pushUrl data.navKey (Date.toIsoString day) ]
                     )
+
+                Swiped event ->
+                    let
+                        ( newState, swipedLeft ) =
+                            Swiper.hasSwipedLeft event data.navarSwipeState
+
+                        updated =
+                            Authenticated { data | navarSwipeState = newState }
+
+                        day =
+                            if swipedLeft then
+                                nextDay data.today
+
+                            else
+                                prevDay data.today
+                    in
+                    handleSelect (Selected day) updated
 
 
 type WorkoutEditorMessage
@@ -437,10 +458,10 @@ view model =
                         |> OrderedDict.map (viewExercises isToggled)
                         |> OrderedDict.values
             in
-            div [ style "padding" "20px" ]
+            div [ class "workouts" ]
                 [ div [ class "row" ]
                     [ div [ class "col-lg" ]
-                        [ div [ class "container-fluid navbar" ]
+                        [ div ([ class "container-fluid navbar navbar-expand-lg navbar-light border rounded", style "margin-bottom" "3px" ] ++ Swiper.onSwipeEvents (\e -> Swiped e |> Select))
                             [ button [ class "btn btn-outline-dark", onClick (Selected (prevDay data.today) |> Select) ] [ text "<" ]
                             , h2 [ class "mx-auto" ]
                                 [ text (dateToString data.today) ]
@@ -486,42 +507,44 @@ viewExercises expanded id exercise =
                 )
             , onClick (Toggled id |> Select)
             ]
-            [ div [ class "row justify-content-between no-gutters", style "white-space" "nowrap" ]
-                [ div [ class "container-fluid col-md" ]
-                    [ h4 [ class "flex-shrink-1", style "font-size-adjust" "0.3" ]
+            [ div [ class "row justify-content-between" ]
+                [ div [ class "col-sm-6" ]
+                    [ h4 [ style "font-size-adjust" "0.3", style "width" "100%" ]
                         [ text exercise.name
                         ]
                     ]
-                , div [ class "container-fluid col-sm-1" ]
+                , div [ class "row col-sm-3 justify-content-between" ]
                     [ h4 []
                         [ text (String.fromInt (List.length exercise.sets))
                         , small [ style "font-size" "0.5em" ]
                             [ text "sets"
                             ]
                         ]
-                    ]
-                , div [ class "col-sm-1" ]
-                    [ h4 []
-                        [ text weights
-                        , small [ style "font-size" "0.5em" ]
-                            [ text "lbs"
+                    , div []
+                        [ h4 []
+                            [ text weights
+                            , small [ style "font-size" "0.5em" ]
+                                [ text "lbs"
+                                ]
+                            ]
+                        ]
+                    , div []
+                        [ h4 []
+                            [ text reps
+                            , small [ style "font-size" "0.5em" ]
+                                [ text "reps"
+                                ]
                             ]
                         ]
                     ]
-                , div [ class "col-sm-1" ]
-                    [ h4 []
-                        [ text reps
-                        , small [ style "font-size" "0.5em" ]
-                            [ text "reps"
+                , div [ class "col-sm-3" ]
+                    [ div [ class "d-flex justify-content-end buttons" ]
+                        [ button [ type_ "button", class "btn btn-outline-primary", overrideOnClickWith (LogSets id exercise.sets |> Log) ]
+                            [ text "Log all!"
                             ]
-                        ]
-                    ]
-                , div [ class "container-fluid col-sm-2" ]
-                    [ button [ type_ "button", class "btn btn-outline-primary float-right", overrideOnClickWith (LogSets id exercise.sets |> Log) ]
-                        [ text "Log all!"
-                        ]
-                    , button [ type_ "button", class "btn btn-outline-dark float-right", style "margin-right" "10px", overrideOnClickWith (OpenWorkoutEditor id |> Edit) ]
-                        [ text "Edit"
+                        , button [ style "margin-left" "5px", type_ "button", class "btn btn-outline-dark edit-button", overrideOnClickWith (OpenWorkoutEditor id |> Edit) ]
+                            [ text "Edit"
+                            ]
                         ]
                     ]
                 ]
@@ -735,7 +758,7 @@ viewExerciseEditor ( exerciseId, exercise ) =
                     [ text "Add set"
                     ]
                 ]
-            , div [ class "d-flex mt-auto justify-content-between", style "margin-bottom" "15px" ]
+            , div [ class "d-flex justify-content-between mt-auto", style "margin-bottom" "15px", style "width" "50%" ]
                 [ button [ class "btn btn-outline-danger", overrideOnClickWith (DeleteExercise exerciseId |> Edit) ] [ text "Delete" ]
                 , button [ class "btn btn-outline-primary", overrideOnClickWith (EditWorkoutSets exerciseId exercise.sets |> Edit) ] [ text "Submit" ]
                 ]
