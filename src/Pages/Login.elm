@@ -123,16 +123,16 @@ view =
 
 viewLogin : Html Msg
 viewLogin =
-    div [ class "login-form" ]
+    div [ class "container-fluid", style "position" "absolute", style "margin-top" "20px" ]
         [ div [ class "form-group container-fluid" ]
             [ div [ class "mx-auto" ]
                 [ h1 [ class "mx-auto" ] [ text "Welcome to Fit.app!" ]
                 ]
-            , div [ class "container-fluid", style "margin" "15px" ]
+            , div [ class "container-fluid mx-auto", style "margin-bottom" "20xp" ]
                 [ input [ type_ "email", class "form-control", placeholder "Email", style "margin-bottom" "10px", onInput EnteredEmail ] []
                 , input [ type_ "password", class "form-control", placeholder "Password", onInput EnteredPassword ] []
                 ]
-            , div [ class "container-fluid d-flex flex-row justify-content-center" ]
+            , div [ class "container-fluid d-flex flex-row justify-content-center", style "margin-top" "20px" ]
                 [ button [ type_ "button", class "mr-2 btn btn-outline-dark btn-lg", onClick SubmittedLogin ] [ text "Log in" ]
                 , button [ type_ "button", class "ml-2 btn btn-primary btn-lg", onClick SubmittedRegistration ] [ text "Sign up" ]
                 ]

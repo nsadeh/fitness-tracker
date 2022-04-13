@@ -172,20 +172,26 @@ handleSelect msg model =
 
                 Swiped event ->
                     let
-                        ( newState, swipedLeft ) =
+                        ( _, swipedLeft ) =
                             Swiper.hasSwipedLeft event data.navarSwipeState
 
-                        updated =
-                            Authenticated { data | navarSwipeState = newState }
+                        ( nextState, swipedRight ) =
+                            Swiper.hasSwipedRight event data.navarSwipeState
 
-                        day =
-                            if swipedLeft then
-                                nextDay data.today
+                        updated =
+                            Authenticated { data | navarSwipeState = nextState }
+
+                        action =
+                            if swipedRight then
+                                Select <| Selected (nextDay data.today)
+
+                            else if swipedLeft then
+                                Select <| Selected (prevDay data.today)
 
                             else
-                                prevDay data.today
+                                NoOp
                     in
-                    handleSelect (Selected day) updated
+                    update action updated
 
 
 type WorkoutEditorMessage
@@ -567,44 +573,49 @@ overrideOnClickWith msg =
 viewSet : String -> Int -> StrengthSet -> Html Msg
 viewSet id num set =
     div [ class "container-fluid list-group-item bg-light border-5" ]
-        [ div [ class "row", style "white-space" "nowrap" ]
-            [ div [ class "container-fluid col-sm-2" ]
-                [ h4 [ class "pl-5", style "margin-top" ".5rem" ] [ text (String.fromInt (num + 1) ++ ".") ]
+        [ div [ class "row justify-content-between", style "white-space" "nowrap" ]
+            [ div [ class "col-sm-auto d-flex justify-content-start" ]
+                [ h2 [ style "margin-top" ".5rem" ] [ text (String.fromInt (num + 1) ++ ".") ]
                 ]
-            , div [ class "col-sm-2" ]
-                [ h3 [ style "margin-top" ".5rem" ]
+            , div [ class "row col-sm-3 justify-content-center", style "margin-top" ".5rem" ]
+                [ h3 []
                     [ text (String.fromFloat set.weight)
-                    , small [ style "font-size" "0.5em" ] [ text "lbs" ]
+                    , small [ style "font-size" "0.5em", style "margin-right" "2px" ] [ text "lbs" ]
+                    ]
+                , div [ style "max-width" "70px", style "margin-left" "2px" ]
+                    [ input
+                        [ type_ "number"
+                        , class "form-control"
+                        , value (String.fromFloat set.weight)
+                        , onInput
+                            (\weight ->
+                                String.toFloat weight
+                                    |> Maybe.withDefault 0.0
+                                    |> EditWeight id num
+                                    |> Log
+                            )
+                        ]
+                        []
                     ]
                 ]
-            , div [ class "col-sm-2", style "margin-top" ".5rem" ]
-                [ input
-                    [ type_ "number"
-                    , class "form-control"
-                    , value (String.fromFloat set.weight)
-                    , onInput
-                        (\weight ->
-                            String.toFloat weight
-                                |> Maybe.withDefault 0.0
-                                |> EditWeight id num
-                                |> Log
-                        )
-                    ]
-                    []
-                ]
-            , div [ class "col-sm-2 container-fluid" ]
-                [ h3 [ style "margin-top" ".5rem", style "padding-left" "5rem" ]
+            , div [ class "col-sm-3 row justify-content-center", style "margin-top" ".5rem" ]
+                [ h3 [ style "padding-right" "2px" ]
                     [ text (String.fromInt set.reps)
                     , small [ style "font-size" "0.5em" ]
                         [ text "reps"
                         ]
                     ]
+                , div [ style "max-width" "70px", style "margin-left" "2px" ]
+                    [ input
+                        [ type_ "number"
+                        , class "form-control"
+                        , value (String.fromInt set.reps)
+                        ]
+                        []
+                    ]
                 ]
-            , div [ class "col-sm-2", style "margin-top" ".5rem" ]
-                [ input [ type_ "number", class "form-control", value (String.fromInt set.reps) ] []
-                ]
-            , div [ class "container-fluid col-sm-2", style "margin-top" ".5rem" ]
-                [ button [ type_ "button", class "btn btn-outline-dark float-right", onClick (LogSet id set |> Log) ]
+            , div [ class "col-sm-2 d-flex justify-content-end", style "margin-top" ".5rem" ]
+                [ button [ type_ "button", class "btn btn-outline-dark", onClick (LogSet id set |> Log) ]
                     [ text "Log set"
                     ]
                 ]
