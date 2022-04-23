@@ -69,6 +69,24 @@
   background-color: aqua;
 } */
 
+.view-set-modal {
+  display: none;
+}
+
+.justify-log-button {
+  justify-content: flex-end !important;
+}
+
+@media screen and (min-width: 576px) {
+  .view-set-modal {
+    display: none;
+  }
+
+  .visible-small {
+    display: none;
+  }
+}
+
 @media screen and (max-width: 576px) {
   .navbar>.btn {
     display: none;
@@ -79,6 +97,18 @@
   }
 
   .slide {
+    display: none;
+  }
+
+  .view-set-modal {
+    display: flex;
+  }
+
+  .justify-log-button {
+    justify-content: center !important;
+  }
+
+  .visible-large {
     display: none;
   }
 }

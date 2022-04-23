@@ -1,17 +1,22 @@
 module Main exposing (main)
 
 import Api.User exposing (getUser)
-import Browser exposing (Document, UrlRequest)
+import Browser exposing (Document, UrlRequest(..))
 import Browser.Navigation exposing (Key)
+import Date
 import Html exposing (Html)
 import Json.Decode exposing (errorToString)
 import Json.Encode as E
 import Pages.Login as Login exposing (Msg(..))
-import Pages.Workouts as Workouts exposing (Model(..), Msg(..))
+import Pages.Workouts as Workouts exposing (Model(..), Msg(..), SetupMessage(..))
 import Task
 import Url exposing (Url)
+import Url.Parser exposing (parse)
 import Utils.Log exposing (LogType(..), log)
-import Pages.Workouts exposing (SetupMessage(..))
+import Api.Supabase exposing (RequestError(..))
+import Url.Parser exposing (Parser)
+import Json.Decode exposing (oneOf)
+import Url.Parser exposing (s)
 
 
 main : Program E.Value Model Msg
@@ -31,14 +36,34 @@ main =
 
 
 onUrlRequest : UrlRequest -> Msg
-onUrlRequest _ =
-    WorkoutsMessage Workouts.NoOp
+onUrlRequest url =
+    case url of
+        Internal internal ->
+            WorkoutsMessage <| CreateNew <| Workouts.ChangedWorkoutName internal.path
+
+        External external ->
+            WorkoutsMessage <| CreateNew <| Workouts.ChangedWorkoutName external
 
 
 onUrlChange : Url -> Msg
-onUrlChange _ =
-    WorkoutsMessage Workouts.NoOp
+onUrlChange url =
+    let
+        dateResult =
+            String.dropLeft 1 url.path
+                |> Date.fromIsoString
+    in
+    case dateResult of
+        Ok date ->
+            WorkoutsMessage <| Select <| Workouts.LoadedUrl date
 
+        Err errorMsg ->
+            WorkoutsMessage <| Setup <| Workouts.FetchError (NavError errorMsg)
+
+
+-- routeParser: Parser (Route -> a) -> a
+-- routeParser = oneOf [
+--     map Workouts.Selected (s "date" </> Date.Date )
+-- ]
 
 
 -- Model --

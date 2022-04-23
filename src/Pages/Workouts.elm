@@ -5,8 +5,9 @@ import Api.Supabase exposing (AuthenticatedUser, RequestError(..), key, url)
 import Api.User as User exposing (storeUser)
 import Browser.Navigation as Nav exposing (Key)
 import Date exposing (Date, Unit(..), format, weekday)
-import Html exposing (Attribute, Html, button, div, h2, h3, h4, input, label, small, span, text)
-import Html.Attributes exposing (checked, class, for, id, placeholder, style, type_, value)
+import Dict exposing (Dict)
+import Html exposing (Attribute, Html, button, div, form, h2, h3, h4, h5, input, label, small, span, text)
+import Html.Attributes exposing (checked, class, disabled, for, id, placeholder, style, type_, value)
 import Html.Events exposing (onCheck, onClick, onInput, stopPropagationOn)
 import Http as H
 import Json.Decode
@@ -31,6 +32,8 @@ type alias WorkoutState =
     , currentUser : AuthenticatedUser
     , workout : OrderedDict String StrengthExercise
     , open : Set String
+    , logged : Dict String (Set Int)
+    , openMobile : Maybe String
     , workoutEditor : Maybe ( String, StrengthExercise )
     , form : WorkoutCreator
     , today : Date
@@ -47,6 +50,13 @@ type Model
 isEditorToggled : WorkoutState -> Bool
 isEditorToggled data =
     data.form.isOpen
+
+
+isLogged : WorkoutState -> String -> Int -> Bool
+isLogged state id index =
+    Dict.get id state.logged
+        |> Maybe.map (Set.member index)
+        |> Maybe.withDefault False
 
 
 
@@ -88,7 +98,9 @@ handleSetup msg model =
                         { api = exerciseApi
                         , currentUser = user
                         , workout = OrderedDict.empty
+                        , logged = Dict.empty
                         , open = Set.empty
+                        , openMobile = Nothing
                         , workoutEditor = Nothing
                         , form = emptyForm
                         , today = Date.fromCalendarDate 2022 Time.Jan 1
@@ -134,6 +146,7 @@ handleSetup msg model =
 type SelectionMessage
     = Toggled String
     | Selected Date
+    | LoadedUrl Date
     | Swiped Swiper.SwipeEvent
 
 
@@ -151,10 +164,10 @@ handleSelect msg model =
                             Set.member id data.open
 
                         untoggle =
-                            \ex -> { data | open = Set.remove ex data.open }
+                            \ex -> { data | open = Set.remove ex data.open, openMobile = Nothing }
 
                         toggle =
-                            \ex -> { data | open = Set.insert ex data.open }
+                            \ex -> { data | open = Set.insert ex data.open, openMobile = Just id }
                     in
                     (if isToggled then
                         untoggle id
@@ -168,6 +181,11 @@ handleSelect msg model =
                 Selected day ->
                     ( Authenticated { data | today = day, workout = OrderedDict.empty, form = emptyForm }
                     , Cmd.batch [ Task.attempt parseWorkout (data.api.getWorkout day), Nav.pushUrl data.navKey (Date.toIsoString day) ]
+                    )
+
+                LoadedUrl day ->
+                    ( Authenticated { data | today = day, workout = OrderedDict.empty, form = emptyForm }
+                    , Task.attempt parseWorkout (data.api.getWorkout day)
                     )
 
                 Swiped event ->
@@ -315,7 +333,7 @@ handleCreate msg model =
 
 
 type LoggingMessage
-    = LogSet String StrengthSet
+    = LogSet String Int StrengthSet
     | LogSets String (List StrengthSet)
     | LoggedSet String Int
     | EditWeight String Int Float
@@ -329,11 +347,18 @@ handleLogging msg model =
 
         Authenticated data ->
             case msg of
-                LogSet id set ->
-                    ( model, Task.attempt parseInsertResults (data.api.logSet id set) )
+                LogSet id index _ ->
+                    let
+                        loggedIndices =
+                            Dict.get id data.logged
+                                |> Maybe.map (\set -> Set.insert index set)
+                                |> Maybe.withDefault Set.empty
+                    in
+                    Authenticated { data | logged = Dict.insert id loggedIndices data.logged } |> noOp
 
+                -- ( model, Task.attempt parseInsertResults (data.api.logSet id set) )
                 LogSets id sets ->
-                    ( model, Cmd.batch (List.map (\set -> handleLogging (LogSet id set) model) sets |> List.map Tuple.second) )
+                    ( model, Cmd.batch (List.indexedMap (\index set -> handleLogging (LogSet id index set) model) sets |> List.map Tuple.second) )
 
                 LoggedSet _ _ ->
                     log Info "In the future we will grey out logged sets" model
@@ -461,11 +486,15 @@ view model =
 
                 exerciseList =
                     data.workout
-                        |> OrderedDict.map (viewExercises isToggled)
+                        |> OrderedDict.map (viewExercises (isLogged data) isToggled)
                         |> OrderedDict.values
             in
             div [ class "workouts" ]
-                [ div [ class "row" ]
+                [ Maybe.map
+                    viewExerciseEditor
+                    data.workoutEditor
+                    |> Maybe.withDefault (div [] [])
+                , div [ class "row" ]
                     [ div [ class "col-lg" ]
                         [ div ([ class "container-fluid navbar navbar-expand-lg navbar-light border rounded", style "margin-bottom" "3px" ] ++ Swiper.onSwipeEvents (\e -> Swiped e |> Select))
                             [ button [ class "btn btn-outline-dark", onClick (Selected (prevDay data.today) |> Select) ] [ text "<" ]
@@ -487,15 +516,19 @@ view model =
                             ]
                         ]
                     ]
-                , Maybe.map
-                    viewExerciseEditor
-                    data.workoutEditor
-                    |> Maybe.withDefault (div [] [])
+                , case data.openMobile of
+                    Just id ->
+                        OrderedDict.get id data.workout
+                            |> Maybe.map (viewSetModal (isLogged data) id)
+                            |> Maybe.withDefault (div [] [])
+
+                    Nothing ->
+                        div [] []
                 ]
 
 
-viewExercises : (String -> Bool) -> String -> StrengthExercise -> Html Msg
-viewExercises expanded id exercise =
+viewExercises : (String -> Int -> Bool) -> (String -> Bool) -> String -> StrengthExercise -> Html Msg
+viewExercises logged expanded id exercise =
     let
         ( weights, reps ) =
             getSetRanges exercise.sets
@@ -545,7 +578,7 @@ viewExercises expanded id exercise =
                     ]
                 , div [ class "col-sm-3" ]
                     [ div [ class "d-flex justify-content-end buttons" ]
-                        [ button [ type_ "button", class "btn btn-outline-primary", overrideOnClickWith (LogSets id exercise.sets |> Log) ]
+                        [ button [ type_ "button", class "btn btn-outline-primary visible-large", overrideOnClickWith (LogSets id exercise.sets |> Log) ]
                             [ text "Log all!"
                             ]
                         , button [ style "margin-left" "5px", type_ "button", class "btn btn-outline-dark edit-button", overrideOnClickWith (OpenWorkoutEditor id |> Edit) ]
@@ -556,7 +589,7 @@ viewExercises expanded id exercise =
                 ]
             ]
         , input [ type_ "checkbox", class "fake-checkbox", checked (expanded id), onCheck (\_ -> Toggled id |> Select) ] []
-        , div [ class "slide" ] (List.indexedMap (viewSet id) exercise.sets)
+        , div [ class "slide" ] (List.indexedMap (viewSet logged id) exercise.sets)
         ]
 
 
@@ -570,52 +603,71 @@ overrideOnClickWith msg =
     stopPropagationOn "click" (Json.Decode.map disableDefault (Json.Decode.succeed msg))
 
 
-viewSet : String -> Int -> StrengthSet -> Html Msg
-viewSet id num set =
+viewSet : (String -> Int -> Bool) -> String -> Int -> StrengthSet -> Html Msg
+viewSet logged exerciseId num set =
     div [ class "container-fluid list-group-item bg-light border-5" ]
         [ div [ class "row justify-content-between", style "white-space" "nowrap" ]
-            [ div [ class "col-sm-auto d-flex justify-content-start" ]
-                [ h2 [ style "margin-top" ".5rem" ] [ text (String.fromInt (num + 1) ++ ".") ]
-                ]
-            , div [ class "row col-sm-3 justify-content-center", style "margin-top" ".5rem" ]
-                [ h3 []
-                    [ text (String.fromFloat set.weight)
-                    , small [ style "font-size" "0.5em", style "margin-right" "2px" ] [ text "lbs" ]
+            [ div [ class "d-flex justify-content-start" ]
+                [ h2 [ class "visible-large", style "margin-top" ".5rem" ]
+                    [ text (String.fromInt (num + 1) ++ ".")
                     ]
-                , div [ style "max-width" "70px", style "margin-left" "2px" ]
-                    [ input
-                        [ type_ "number"
-                        , class "form-control"
-                        , value (String.fromFloat set.weight)
-                        , onInput
-                            (\weight ->
-                                String.toFloat weight
-                                    |> Maybe.withDefault 0.0
-                                    |> EditWeight id num
-                                    |> Log
-                            )
-                        ]
-                        []
+                , h4 [ class "visible-small", style "margin-top" ".5rem" ]
+                    [ text (String.fromInt (num + 1) ++ ".")
                     ]
                 ]
-            , div [ class "col-sm-3 row justify-content-center", style "margin-top" ".5rem" ]
-                [ h3 [ style "padding-right" "2px" ]
-                    [ text (String.fromInt set.reps)
-                    , small [ style "font-size" "0.5em" ]
-                        [ text "reps"
+            , div [ class "row col-sm-6 justify-content-around", style "margin-top" ".5rem" ]
+                [ div [ class "row justify-content-center" ]
+                    [ h3 [ class "visible-large" ]
+                        [ text (String.fromFloat set.weight)
+                        , small [ style "font-size" "0.5em", style "margin-right" "2px" ] [ text "lbs" ]
+                        ]
+                    , h5 [ class "visible-small" ]
+                        [ text (String.fromFloat set.weight)
+                        , small [ style "font-size" "0.5em", style "margin-right" "2px" ] [ text "lbs" ]
+                        ]
+                    , div [ style "max-width" "70px", style "margin-left" "2px", id "weight" ]
+                        [ input
+                            [ type_ "number"
+                            , class "form-control"
+                            , value (String.fromFloat set.weight)
+                            , disabled (logged exerciseId num)
+                            , onInput
+                                (\weight ->
+                                    String.toFloat weight
+                                        |> Maybe.withDefault 0.0
+                                        |> EditWeight exerciseId num
+                                        |> Log
+                                )
+                            ]
+                            []
                         ]
                     ]
-                , div [ style "max-width" "70px", style "margin-left" "2px" ]
-                    [ input
-                        [ type_ "number"
-                        , class "form-control"
-                        , value (String.fromInt set.reps)
+                , div [ class "row justify-content-center" ]
+                    [ h3 [ class "visible-large", style "padding-right" "2px" ]
+                        [ text (String.fromInt set.reps)
+                        , small [ style "font-size" "0.5em" ]
+                            [ text "reps"
+                            ]
                         ]
-                        []
+                    , h5 [ class "visible-small", style "padding-right" "2px" ]
+                        [ text (String.fromInt set.reps)
+                        , small [ style "font-size" "0.5em" ]
+                            [ text "reps"
+                            ]
+                        ]
+                    , div [ style "max-width" "70px", style "margin-left" "2px" ]
+                        [ input
+                            [ type_ "number"
+                            , class "form-control"
+                            , value (String.fromInt set.reps)
+                            , disabled (logged exerciseId num)
+                            ]
+                            []
+                        ]
                     ]
                 ]
-            , div [ class "col-sm-2 d-flex justify-content-end", style "margin-top" ".5rem" ]
-                [ button [ type_ "button", class "btn btn-outline-dark", onClick (LogSet id set |> Log) ]
+            , div [ class "col-sm-2 d-flex justify-log-button", style "margin-top" ".5rem" ]
+                [ button [ type_ "button", class "btn btn-outline-dark", overrideOnClickWith (LogSet exerciseId num set |> Log) ]
                     [ text "Log set"
                     ]
                 ]
@@ -730,7 +782,7 @@ viewFormSingleSet index =
 viewExerciseEditor : ( String, StrengthExercise ) -> Html Msg
 viewExerciseEditor ( exerciseId, exercise ) =
     div
-        [ style "position" "absolute"
+        [ style "position" "fixed"
         , style "top" "0"
         , style "bottom" "0"
         , style "right" "0"
@@ -739,6 +791,8 @@ viewExerciseEditor ( exerciseId, exercise ) =
         , style "align-items" "center"
         , style "justify-content" "center"
         , style "background-color" "rgba(33, 43, 54, 0.4)"
+        , style "z-index" "1"
+        , style "overflow-y" "scroll"
         , onClick (CloseWorkoutEditor |> Edit)
         ]
         [ div
@@ -823,5 +877,44 @@ viewEditFormLine index set =
             ]
         , div [ class "row" ]
             [ button [ class "btn btn-outline-danger", type_ "button", overrideOnClickWith (RemoveSetFromEditor index |> Edit) ] [ text "Remove" ]
+            ]
+        ]
+
+
+viewSetModal : (String -> Int -> Bool) -> String -> StrengthExercise -> Html Msg
+viewSetModal logged id exercise =
+    div
+        [ class "view-set-modal"
+        , style "position" "fixed"
+        , style "top" "0"
+        , style "bottom" "0"
+        , style "right" "0"
+        , style "left" "0"
+        , style "align-items" "center"
+        , style "justify-content" "center"
+        , style "background-color" "rgba(33, 43, 54, 0.4)"
+        , onClick (Toggled id |> Select)
+        ]
+        [ div
+            [ class "px-3"
+            , style "border-style" "solid"
+            , style "border-radius" "3px"
+            , style "border-color" "white"
+            , style "background-color" "white"
+            , style "height" "70%"
+            , style "width" "80%"
+            , style "display" "flex"
+            , style "flex-direction" "column"
+            , style "align-items" "center"
+            , style "overflow" "scroll"
+            , overrideOnClickWith NoOp
+            ]
+            [ h2 [ style "text-align" "center" ]
+                [ text exercise.name
+                ]
+            , div [] (List.indexedMap (viewSet logged id) exercise.sets)
+            , button [ type_ "button", class "btn btn-outline-primary mt-auto mb-2", overrideOnClickWith (LogSets id exercise.sets |> Log) ]
+                [ text "Log all!"
+                ]
             ]
         ]

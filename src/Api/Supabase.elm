@@ -17,6 +17,7 @@ key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inpt
 
 type RequestError
     = Parsing D.Error
+    | NavError String
     | Http H.Error
 
 formatError: H.Response m -> Result RequestError m
