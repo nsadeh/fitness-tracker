@@ -6,8 +6,8 @@ import Api.User as User exposing (storeUser)
 import Browser.Navigation as Nav exposing (Key)
 import Date exposing (Date, Unit(..), format, weekday)
 import Dict exposing (Dict)
-import Html exposing (Attribute, Html, button, div, form, h2, h3, h4, h5, input, label, small, span, text)
-import Html.Attributes exposing (checked, class, disabled, for, id, placeholder, style, type_, value)
+import Html exposing (Attribute, Html, a, button, div, form, h2, h3, h4, h5, input, label, small, span, text)
+import Html.Attributes exposing (checked, class, disabled, for, href, id, placeholder, style, type_, value)
 import Html.Events exposing (onCheck, onClick, onInput, stopPropagationOn)
 import Http as H
 import Json.Decode
@@ -17,6 +17,7 @@ import StrengthSet exposing (StrengthExercise, StrengthSet, addLastSet, changeRe
 import Swiper
 import Task
 import Time
+import Url.Builder
 import Utils.Log exposing (LogType(..), log, logCmd)
 import Utils.OrderedDict as OrderedDict exposing (OrderedDict)
 import Workout exposing (Workout)
@@ -78,7 +79,7 @@ type Msg
 
 
 type SetupMessage
-    = LoggedIn AuthenticatedUser Nav.Key
+    = LoggedIn AuthenticatedUser Nav.Key (Maybe SelectionMessage)
     | FetchedWorkout Workout
     | FetchError RequestError
     | FailedRefresh RequestError Nav.Key
@@ -89,36 +90,39 @@ handleSetup msg model =
     case model of
         Unauthenticated ->
             case msg of
-                LoggedIn user navKey ->
+                LoggedIn user navKey thenSelect ->
                     let
                         exerciseApi =
                             Exercise.api url key user
+
+                        authenticatedModel =
+                            Authenticated
+                                { api = exerciseApi
+                                , currentUser = user
+                                , workout = OrderedDict.empty
+                                , logged = Dict.empty
+                                , open = Set.empty
+                                , openMobile = Nothing
+                                , workoutEditor = Nothing
+                                , form = emptyForm
+                                , today = Date.fromCalendarDate 2022 Time.Jan 1
+                                , navKey = navKey
+                                , navarSwipeState = Swiper.initialSwipingState
+                                }
+
+                        handleDate =
+                            Maybe.map (\sel -> handleSelect sel authenticatedModel) thenSelect
                     in
-                    ( Authenticated
-                        { api = exerciseApi
-                        , currentUser = user
-                        , workout = OrderedDict.empty
-                        , logged = Dict.empty
-                        , open = Set.empty
-                        , openMobile = Nothing
-                        , workoutEditor = Nothing
-                        , form = emptyForm
-                        , today = Date.fromCalendarDate 2022 Time.Jan 1
-                        , navKey = navKey
-                        , navarSwipeState = Swiper.initialSwipingState
-                        }
-                    , Cmd.batch
-                        [ storeUser user
-                        , Task.perform Select <| Task.map Selected Date.today
-                        ]
-                    )
+                    handleDate
+                        |> withDefault ( authenticatedModel, Task.perform (\day -> Select (Selected day)) Date.today )
+                        |> Tuple.mapSecond (\cmd -> Cmd.batch [ cmd, storeUser user ])
 
                 _ ->
                     log Error "Cannot update data on unauthenticated workouts page" model
 
         Authenticated data ->
             case msg of
-                LoggedIn user _ ->
+                LoggedIn user _ _ ->
                     ( Authenticated { data | currentUser = user }, Cmd.batch [ logCmd Info "refreshed user", storeUser user ] )
 
                 FailedRefresh err _ ->
@@ -148,6 +152,7 @@ type SelectionMessage
     | Selected Date
     | LoadedUrl Date
     | Swiped Swiper.SwipeEvent
+    | ImporoperSelection String
 
 
 handleSelect : SelectionMessage -> Model -> ( Model, Cmd Msg )
@@ -180,12 +185,12 @@ handleSelect msg model =
 
                 Selected day ->
                     ( Authenticated { data | today = day, workout = OrderedDict.empty, form = emptyForm }
-                    , Cmd.batch [ Task.attempt parseWorkout (data.api.getWorkout day), Nav.pushUrl data.navKey (Date.toIsoString day) ]
+                    , Task.attempt parseWorkout (data.api.getWorkout day)
                     )
 
                 LoadedUrl day ->
-                    ( Authenticated { data | today = day, workout = OrderedDict.empty, form = emptyForm }
-                    , Task.attempt parseWorkout (data.api.getWorkout day)
+                    ( model
+                    , Nav.pushUrl data.navKey (Url.Builder.absolute [ "date", Date.toIsoString day ] [])
                     )
 
                 Swiped event ->
@@ -201,15 +206,18 @@ handleSelect msg model =
 
                         action =
                             if swipedRight then
-                                Select <| Selected (nextDay data.today)
+                                Select <| LoadedUrl (nextDay data.today)
 
                             else if swipedLeft then
-                                Select <| Selected (prevDay data.today)
+                                Select <| LoadedUrl (prevDay data.today)
 
                             else
                                 NoOp
                     in
                     update action updated
+
+                ImporoperSelection errMsg ->
+                    log Error errMsg model
 
 
 type WorkoutEditorMessage
@@ -410,7 +418,7 @@ parseLogin : Key -> Result RequestError AuthenticatedUser -> Msg
 parseLogin key result =
     case result of
         Ok user ->
-            LoggedIn user key |> Setup
+            LoggedIn user key Nothing |> Setup
 
         Err err ->
             FailedRefresh err key |> Setup
@@ -497,10 +505,10 @@ view model =
                 , div [ class "row" ]
                     [ div [ class "col-lg" ]
                         [ div ([ class "container-fluid navbar navbar-expand-lg navbar-light border rounded", style "margin-bottom" "3px" ] ++ Swiper.onSwipeEvents (\e -> Swiped e |> Select))
-                            [ button [ class "btn btn-outline-dark", onClick (Selected (prevDay data.today) |> Select) ] [ text "<" ]
+                            [ a [ class "btn btn-outline-dark", href ("/date/" ++ (prevDay data.today |> Date.toIsoString)) ] [ text "<" ]
                             , h2 [ class "mx-auto" ]
                                 [ text (dateToString data.today) ]
-                            , button [ class "btn btn-outline-dark", onClick (Selected (nextDay data.today) |> Select) ] [ text ">" ]
+                            , a [ class "btn btn-outline-dark", href ("/date/" ++ (nextDay data.today |> Date.toIsoString)) ] [ text ">" ]
                             ]
                         , div [] exerciseList
                         , input [ type_ "checkbox", class "fake-checkbox", onCheck (\_ -> CreateFormToggled |> CreateNew), checked (isEditorToggled data) ] []

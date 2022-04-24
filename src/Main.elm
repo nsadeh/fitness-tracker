@@ -1,22 +1,20 @@
 module Main exposing (main)
 
+import Api.Supabase exposing (RequestError(..))
 import Api.User exposing (getUser)
 import Browser exposing (Document, UrlRequest(..))
 import Browser.Navigation exposing (Key)
-import Date
+import Date exposing (Date)
 import Html exposing (Html)
 import Json.Decode exposing (errorToString)
 import Json.Encode as E
 import Pages.Login as Login exposing (Msg(..))
 import Pages.Workouts as Workouts exposing (Model(..), Msg(..), SetupMessage(..))
 import Task
+import Time exposing (Month(..))
 import Url exposing (Url)
-import Url.Parser exposing (parse)
+import Url.Parser exposing ((</>), oneOf, string)
 import Utils.Log exposing (LogType(..), log)
-import Api.Supabase exposing (RequestError(..))
-import Url.Parser exposing (Parser)
-import Json.Decode exposing (oneOf)
-import Url.Parser exposing (s)
 
 
 main : Program E.Value Model Msg
@@ -39,42 +37,55 @@ onUrlRequest : UrlRequest -> Msg
 onUrlRequest url =
     case url of
         Internal internal ->
-            WorkoutsMessage <| CreateNew <| Workouts.ChangedWorkoutName internal.path
+            Url.Parser.parse (routeParser Workouts.LoadedUrl) internal
+                |> Maybe.map Select
+                |> Maybe.map WorkoutsMessage
+                |> Maybe.withDefault (WorkoutsMessage NoOp)
 
-        External external ->
-            WorkoutsMessage <| CreateNew <| Workouts.ChangedWorkoutName external
+        External _ ->
+            WorkoutsMessage NoOp
 
 
 onUrlChange : Url -> Msg
 onUrlChange url =
-    let
-        dateResult =
-            String.dropLeft 1 url.path
-                |> Date.fromIsoString
-    in
-    case dateResult of
-        Ok date ->
-            WorkoutsMessage <| Select <| Workouts.LoadedUrl date
-
-        Err errorMsg ->
-            WorkoutsMessage <| Setup <| Workouts.FetchError (NavError errorMsg)
+    Url.Parser.parse (routeParser (\date -> Workouts.Selected date)) url
+        |> Maybe.map Select
+        |> Maybe.map WorkoutsMessage
+        |> Maybe.withDefault (WorkoutsMessage NoOp)
 
 
--- routeParser: Parser (Route -> a) -> a
--- routeParser = oneOf [
---     map Workouts.Selected (s "date" </> Date.Date )
--- ]
+routeParser : (Date -> Workouts.SelectionMessage) -> Url.Parser.Parser (Workouts.SelectionMessage -> a) a
+routeParser func =
+    oneOf
+        [ Url.Parser.s "date"
+            </> string
+            |> Url.Parser.map Date.fromIsoString
+            |> Url.Parser.map
+                (\res ->
+                    case res of
+                        Ok date ->
+                            func date
+
+                        Err errMsg ->
+                            Workouts.ImporoperSelection errMsg
+                )
+        ]
+
 
 
 -- Model --
 
 
 init : E.Value -> Url -> Key -> ( Model, Cmd Msg )
-init flags _ key =
+init flags route key =
     case getUser flags of
         Ok user ->
+            let
+                thenSelect =
+                    Url.Parser.parse (routeParser Workouts.Selected) route
+            in
             ( WorkoutsPage Workouts.Unauthenticated
-            , Task.succeed (Workouts.LoggedIn user key)
+            , Task.succeed (Workouts.LoggedIn user key thenSelect)
                 |> Task.map Setup
                 |> Task.perform WorkoutsMessage
             )
@@ -103,7 +114,7 @@ update msg model =
         ( LoginMessage loginMsg, LoginPage loginMdl ) ->
             case loginMsg of
                 LoginSucceeded user ->
-                    Workouts.update (LoggedIn user loginMdl.navKey |> Setup) Unauthenticated |> asMain WorkoutsPage WorkoutsMessage
+                    Workouts.update (LoggedIn user loginMdl.navKey Nothing |> Setup) Unauthenticated |> asMain WorkoutsPage WorkoutsMessage
 
                 _ ->
                     Login.update loginMsg loginMdl |> asMain LoginPage LoginMessage
@@ -131,9 +142,23 @@ asMain modelMapper cmdMapper ( mdl, cmd ) =
 
 viewDocument : (Model -> Html Msg) -> Model -> Document Msg
 viewDocument render model =
-    { title = "Fit.app"
-    , body = List.singleton (render model)
-    }
+    case model of
+        LoginPage _ ->
+            { title = "Welcome to Fit.app"
+            , body = List.singleton (render model)
+            }
+
+        WorkoutsPage page ->
+            case page of
+                Unauthenticated ->
+                    { title = "Welcome to Fit.app"
+                    , body = List.singleton (render model)
+                    }
+
+                Authenticated data ->
+                    { title = "Fit.app " ++ (Date.format "EEEE, MMMM d" data.today)
+                    , body = List.singleton (render model)
+                    }
 
 
 view : Model -> Html Msg
