@@ -14,7 +14,7 @@
     "parcel-plugin-sw-cache": "^0.2.5"
   },
   "dependencies": {
-    "@parcel/transformer-webmanifest": "^2.3.1",
+    "@parcel/transformer-webmanifest": "^2.3.0",
     "@parcel/transformer-elm": "^2.3.1",
     "bootstrap-icons": "^1.8.1",
     "elm": "^0.19.1-5",
