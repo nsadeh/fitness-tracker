@@ -1,8 +1,12 @@
 {
-  "short_name": "Fit App",
-  "name": "For logging weights",
-  "start_url": "./index.html",
-  "display": "standalone",
-  "theme_color": "#000000",
-  "background_color": "#ffffff"
+  "lang" : "en-US",
+  "name" : "APP NAME (max 45 characters)",
+  "short_name" : "(max 12 cha)",
+  "description" : "DESCRIPTION",
+  "scope" : "/",
+  "start_url" : "/", 
+  "display" : "standalone",
+  "theme_color" : "#000000",
+  "background_color" : "#000000",
+  "orientation" : "any"
 }

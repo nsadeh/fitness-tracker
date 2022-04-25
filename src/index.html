@@ -4,22 +4,22 @@
 <head>
   <meta charset="utf-8" />
   <title>Fit.app</title>
-  <link rel="manifest" href="manifest.webmanifest">
   <script type="module" src="index.js"></script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
     integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
   <link rel="stylesheet" href="./css/stylesheet.css" type="text/css">
+  <link rel="manifest" href="manifest.webmanifest" />
 </head>
 
 <body>
   <div id="root"></div>
   <script>
-    const sw = 'service-worker.js'
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker
-        .register(sw)
-        .then(function () { console.log("Service Worker Registered"); })
+      navigator.serviceWorker.register('sw.js')
+        .then(function (registration) {
+          console.log('Registration successful, scope is:', registration.scope);
+        })
         .catch(function (error) {
           console.log('Service worker registration failed, error:', error);
         });

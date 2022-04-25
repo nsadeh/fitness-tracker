@@ -3,12 +3,15 @@
   "source": "src/index.html",
   "scripts": {
     "start": "parcel",
-    "build": "parcel build src/index.html",
-    "postbuild": "workbox generateSW"
+    "build": "parcel build src/index.html --no-minify --no-cache --public-url \".\""
+  },
+  "cache": {
+    "inDev": false,
+    "strategy": "default"
   },
   "devDependencies": {
     "parcel": "^2.3.1",
-    "workbox-cli": "^6.5.3"
+    "parcel-plugin-sw-cache": "^0.2.5"
   },
   "dependencies": {
     "@parcel/transformer-elm": "^2.3.1",
