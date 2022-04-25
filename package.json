@@ -3,7 +3,7 @@
   "source": "src/index.html",
   "scripts": {
     "start": "parcel",
-    "build": "parcel build src/index.html --no-minify --no-cache --public-url \".\""
+    "build": "parcel build src/index.html --no-cache --public-url \".\""
   },
   "cache": {
     "inDev": false,
