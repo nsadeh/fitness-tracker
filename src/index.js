@@ -18,9 +18,3 @@ app.ports.logDebug.subscribe(function(message) {
 app.ports.setStorage.subscribe(function (state) {
   localStorage.setItem('user-creds', JSON.stringify(state));
 });
-
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker
-    .register('./service-worker.js')
-    .then(function () { console.log("Service Worker Registered"); });
-}

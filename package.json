@@ -3,10 +3,12 @@
   "source": "src/index.html",
   "scripts": {
     "start": "parcel",
-    "build": "parcel build src/index.html"
+    "build": "parcel build src/index.html",
+    "postbuild": "workbox generateSW"
   },
   "devDependencies": {
-    "parcel": "^2.3.1"
+    "parcel": "^2.3.1",
+    "workbox-cli": "^6.5.3"
   },
   "dependencies": {
     "@parcel/transformer-elm": "^2.3.1",
