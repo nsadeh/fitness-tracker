@@ -32,6 +32,7 @@ type alias WorkoutState =
     { api : Exercise.API
     , currentUser : AuthenticatedUser
     , workout : OrderedDict String StrengthExercise
+    , lastWeek: OrderedDict String StrengthExercise
     , open : Set String
     , logged : Dict String (Set Int)
     , openMobile : Maybe String
@@ -100,6 +101,7 @@ handleSetup msg model =
                                 { api = exerciseApi
                                 , currentUser = user
                                 , workout = OrderedDict.empty
+                                , lastWeek = OrderedDict.empty
                                 , logged = Dict.empty
                                 , open = Set.empty
                                 , openMobile = Nothing
