@@ -10,13 +10,13 @@
     "strategy": "default"
   },
   "devDependencies": {
-    "parcel": "^2.3.1",
     "parcel-plugin-sw-cache": "^0.2.5"
   },
   "dependencies": {
     "@parcel/transformer-webmanifest": "^2.5.0",
     "bootstrap-icons": "^1.8.1",
     "elm": "^0.19.1-5",
-    "node-elm-compiler": "^5.0.6"
+    "node-elm-compiler": "^5.0.6",
+    "parcel": "^2.5.0"
   }
 }
