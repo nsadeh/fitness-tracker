@@ -14,7 +14,7 @@ import Task
 import Time exposing (Month(..))
 import Url exposing (Url)
 import Url.Parser exposing ((</>), oneOf, string)
-import Utils.Log exposing (LogType(..), log)
+import Utils.Log exposing (LogType(..), log, logCmd)
 
 
 main : Program E.Value Model Msg
@@ -85,9 +85,12 @@ init flags route key =
                     Url.Parser.parse (routeParser Workouts.Selected) route
             in
             ( WorkoutsPage Workouts.Unauthenticated
-            , Task.succeed (Workouts.LoggedIn user key thenSelect)
-                |> Task.map Setup
-                |> Task.perform WorkoutsMessage
+            , Cmd.batch
+                [ Task.succeed (Workouts.LoggedIn user key thenSelect)
+                    |> Task.map Setup
+                    |> Task.perform WorkoutsMessage
+                , logCmd Debug "Deserialized user!"
+                ]
             )
 
         Err error ->
@@ -156,7 +159,7 @@ viewDocument render model =
                     }
 
                 Authenticated data ->
-                    { title = "Fit.app " ++ (Date.format "EEEE, MMMM d" data.today)
+                    { title = "Fit.app " ++ Date.format "EEEE, MMMM d" data.today
                     , body = List.singleton (render model)
                     }
 
