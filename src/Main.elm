@@ -13,8 +13,10 @@ import Pages.Workouts as Workouts exposing (Model(..), Msg(..), SetupMessage(..)
 import Task
 import Time exposing (Month(..))
 import Url exposing (Url)
-import Url.Parser exposing ((</>), oneOf, string)
+import Url.Parser exposing ((</>), oneOf, query)
+import Url.Parser.Query
 import Utils.Log exposing (LogType(..), log, logCmd)
+import Url.Parser exposing (s)
 
 
 main : Program E.Value Model Msg
@@ -57,18 +59,20 @@ onUrlChange url =
 routeParser : (Date -> Workouts.SelectionMessage) -> Url.Parser.Parser (Workouts.SelectionMessage -> a) a
 routeParser func =
     oneOf
-        [ Url.Parser.s "date"
-            </> string
-            |> Url.Parser.map Date.fromIsoString
+        [ s "workout" </> query (Url.Parser.Query.string "date")
+            |> Url.Parser.map (Maybe.map Date.fromIsoString)
             |> Url.Parser.map
-                (\res ->
-                    case res of
-                        Ok date ->
-                            func date
+                (Maybe.map
+                    (\res ->
+                        case res of
+                            Ok date ->
+                                func date
 
-                        Err errMsg ->
-                            Workouts.ImporoperSelection errMsg
+                            Err errMsg ->
+                                Workouts.ImporoperSelection errMsg
+                    )
                 )
+            |> Url.Parser.map (Maybe.withDefault (Workouts.ImporoperSelection "Not cool"))
         ]
 
 

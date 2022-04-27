@@ -17,7 +17,7 @@ import StrengthSet exposing (StrengthExercise, StrengthSet, addLastSet, changeRe
 import Swiper
 import Task
 import Time
-import Url.Builder
+import Url.Builder exposing (string)
 import Utils.Log exposing (LogType(..), log, logCmd)
 import Utils.OrderedDict as OrderedDict exposing (OrderedDict)
 import Workout exposing (Workout)
@@ -32,7 +32,7 @@ type alias WorkoutState =
     { api : Exercise.API
     , currentUser : AuthenticatedUser
     , workout : OrderedDict String StrengthExercise
-    , lastWeek: OrderedDict String StrengthExercise
+    , lastWeek : OrderedDict String StrengthExercise
     , open : Set String
     , logged : Dict String (Set Int)
     , openMobile : Maybe String
@@ -116,7 +116,7 @@ handleSetup msg model =
                             Maybe.map (\sel -> handleSelect sel authenticatedModel) thenSelect
                     in
                     handleDate
-                        |> withDefault ( authenticatedModel, Task.perform (\day -> Select (Selected day)) Date.today )
+                        |> withDefault ( authenticatedModel, Task.perform (\day -> Select (LoadedUrl day)) Date.today )
                         |> Tuple.mapSecond (\cmd -> Cmd.batch [ cmd, storeUser user ])
 
                 _ ->
@@ -192,7 +192,7 @@ handleSelect msg model =
 
                 LoadedUrl day ->
                     ( model
-                    , Nav.pushUrl data.navKey (Url.Builder.absolute [ "date", Date.toIsoString day ] [])
+                    , Nav.pushUrl data.navKey (makeExerciseUrl day)
                     )
 
                 Swiped event ->
@@ -451,6 +451,11 @@ dateToString date =
     format "EEE MMMM d y" date
 
 
+makeExerciseUrl : Date -> String
+makeExerciseUrl date =
+    Url.Builder.absolute [ "workout" ] [ string "date" (Date.toIsoString date) ]
+
+
 newExerciseBody : WorkoutState -> InsertPayload
 newExerciseBody data =
     { exercise = createNew data.form
@@ -507,10 +512,10 @@ view model =
                 , div [ class "row" ]
                     [ div [ class "col-lg" ]
                         [ div ([ class "container-fluid navbar navbar-expand-lg navbar-light border rounded", style "margin-bottom" "3px" ] ++ Swiper.onSwipeEvents (\e -> Swiped e |> Select))
-                            [ a [ class "btn btn-outline-dark", href ("/date/" ++ (prevDay data.today |> Date.toIsoString)) ] [ text "<" ]
+                            [ a [ class "btn btn-outline-dark", href (prevDay data.today |> makeExerciseUrl) ] [ text "<" ]
                             , h2 [ class "mx-auto" ]
                                 [ text (dateToString data.today) ]
-                            , a [ class "btn btn-outline-dark", href ("/date/" ++ (nextDay data.today |> Date.toIsoString)) ] [ text ">" ]
+                            , a [ class "btn btn-outline-dark", href (nextDay data.today |> makeExerciseUrl) ] [ text ">" ]
                             ]
                         , div [] exerciseList
                         , input [ type_ "checkbox", class "fake-checkbox", onCheck (\_ -> CreateFormToggled |> CreateNew), checked (isEditorToggled data) ] []
