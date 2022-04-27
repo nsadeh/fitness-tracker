@@ -140,7 +140,7 @@ handleSetup msg model =
                                 userApi =
                                     User.api url key
                             in
-                            ( model
+                            ( Unauthenticated
                             , userApi.refreshAuth data.currentUser.refreshToken
                                 |> Task.attempt (parseLogin data.navKey)
                             )
