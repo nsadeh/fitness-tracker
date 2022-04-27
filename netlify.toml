@@ -1,9 +1,9 @@
 [[redirects]]
-  from = "/*"
+  from = "/date/*"
   to = "/index.html"
   status = 200
 
 [[redirects]]
-  from = "/date/*"
+  from = "/*"
   to = "/index.html"
   status = 200
