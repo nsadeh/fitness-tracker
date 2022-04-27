@@ -4,6 +4,6 @@
   status = 200
 
 [[redirects]]
-  from "/date/:month"
+  from = "/date/:month"
   to = "/index.html"
   status = 200
