@@ -2,7 +2,7 @@
   "name": "fitapp",
   "source": "src/index.html",
   "scripts": {
-    "start": "parcel",
+    "start": "parcel src/index.html",
     "build": "parcel build src/index.html --no-cache --public-url \".\"",
     "postbuild": "workbox generateSW"
   },
@@ -11,16 +11,19 @@
     "strategy": "default"
   },
   "devDependencies": {
-    "parcel-plugin-sw-cache": "^0.2.5"
+    "autoprefixer": "^10.4.5",
+    "elm": "^0.19.1-5",
+    "parcel": "^2.5.0",
+    "parcel-plugin-sw-cache": "^0.2.5",
+    "postcss": "^8.4.13",
+    "tailwindcss": "^3.0.24"
   },
   "dependencies": {
     "@parcel/packager-raw-url": "^2.5.0",
     "@parcel/transformer-elm": "^2.5.0",
     "@parcel/transformer-webmanifest": "^2.5.0",
     "bootstrap-icons": "^1.8.1",
-    "elm": "^0.19.1-5",
     "node-elm-compiler": "^5.0.6",
-    "parcel": "^2.5.0",
     "workbox-cli": "^6.5.3"
   }
 }

@@ -13,10 +13,9 @@ import Pages.Workouts as Workouts exposing (Model(..), Msg(..), SetupMessage(..)
 import Task
 import Time exposing (Month(..))
 import Url exposing (Url)
-import Url.Parser exposing ((</>), oneOf, query)
+import Url.Parser exposing ((</>), oneOf, query, s)
 import Url.Parser.Query
 import Utils.Log exposing (LogType(..), log, logCmd)
-import Url.Parser exposing (s)
 
 
 main : Program E.Value Model Msg
@@ -59,7 +58,8 @@ onUrlChange url =
 routeParser : (Date -> Workouts.SelectionMessage) -> Url.Parser.Parser (Workouts.SelectionMessage -> a) a
 routeParser func =
     oneOf
-        [ s "workout" </> query (Url.Parser.Query.string "date")
+        [ s "workout"
+            </> query (Url.Parser.Query.string "date")
             |> Url.Parser.map (Maybe.map Date.fromIsoString)
             |> Url.Parser.map
                 (Maybe.map
@@ -89,12 +89,9 @@ init flags route key =
                     Url.Parser.parse (routeParser Workouts.Selected) route
             in
             ( WorkoutsPage Workouts.Unauthenticated
-            , Cmd.batch
-                [ Task.succeed (Workouts.LoggedIn user key thenSelect)
-                    |> Task.map Setup
-                    |> Task.perform WorkoutsMessage
-                , logCmd Debug "Deserialized user!"
-                ]
+            , Task.succeed (Workouts.LoggedIn user key thenSelect)
+                |> Task.map Setup
+                |> Task.perform WorkoutsMessage
             )
 
         Err error ->
