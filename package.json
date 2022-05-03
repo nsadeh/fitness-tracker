@@ -7,6 +7,7 @@
     "postbuild": "workbox generateSW"
   },
   "devDependencies": {
+    "@parcel/transformer-css": "^2.5.0",
     "elm": "^0.19.1-5",
     "parcel": "^2.5.0",
     "parcel-plugin-sw-cache": "^0.2.5",
