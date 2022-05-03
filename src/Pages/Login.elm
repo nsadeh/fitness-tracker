@@ -1,16 +1,14 @@
 module Pages.Login exposing (..)
 
 import Api.Supabase exposing (AuthenticatedUser, RequestError, key, url)
-import Api.User exposing (LoginInfo, api)
+import Api.User exposing (LoginInfo, api, setEmail, setPassword)
 import Browser.Navigation exposing (Key)
-import Html exposing (Html, button, div, h1, input, text)
-import Html.Attributes exposing (class, placeholder, style, type_)
+import Html exposing (Html, button, div, input, p, text)
+import Html.Attributes exposing (class, placeholder, type_)
 import Html.Events exposing (onClick, onInput)
 import Http
 import Task
 import Utils.Log exposing (LogType(..), log)
-import Api.User exposing (setEmail)
-import Api.User exposing (setPassword)
 
 
 type alias Model =
@@ -123,18 +121,18 @@ view =
 
 viewLogin : Html Msg
 viewLogin =
-    div [ class "container-fluid", style "position" "absolute", style "margin-top" "20px" ]
-        [ div [ class "form-group container-fluid" ]
-            [ div [ class "mx-auto" ]
-                [ h1 [ class "mx-auto" ] [ text "Welcome to Fit.app!" ]
+    div [ class "flex justify-center h-screen bg-gray-800 text-gray-100" ]
+        [ div [ class "max-w-sm sm:max-w-lg" ]
+            [ div [ class "pt-8 sm:pt-24 sm:justify-start justify-center" ]
+                [ p [ class "text-4xl sm:text-left text-center" ] [ text "Welcome to Fit.app!" ]
                 ]
-            , div [ class "container-fluid mx-auto", style "margin-bottom" "20xp" ]
-                [ input [ type_ "email", class "form-control", placeholder "Email", style "margin-bottom" "10px", onInput EnteredEmail ] []
-                , input [ type_ "password", class "form-control", placeholder "Password", onInput EnteredPassword ] []
+            , div [ class "flex flex-col justify-center p-4 sm:py-10" ]
+                [ input [ class "min-w-full border-2 rounded-md p-2 m-1", placeholder "Email", onInput EnteredEmail ] []
+                , input [ class "min-w-full border-2 rounded-md p-2 m-1", type_ "password", placeholder "Password", onInput EnteredPassword ] []
                 ]
-            , div [ class "container-fluid d-flex flex-row justify-content-center", style "margin-top" "20px" ]
-                [ button [ type_ "button", class "mr-2 btn btn-outline-dark btn-lg", onClick SubmittedLogin ] [ text "Log in" ]
-                , button [ type_ "button", class "ml-2 btn btn-primary btn-lg", onClick SubmittedRegistration ] [ text "Sign up" ]
+            , div [ class "flex justify-center"]
+                [ button [ class "border-2 border-blue-400 w-24 rounded-md m-2 p-2", type_ "button", onClick SubmittedLogin ] [ text "Log in" ]
+                , button [ class "border-2 border-blue-50 w-24 rounded-md m-2 p-2", type_ "button", onClick SubmittedRegistration ] [ text "Sign up" ]
                 ]
             ]
         ]

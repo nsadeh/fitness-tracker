@@ -6,12 +6,7 @@
     "build": "parcel build src/index.html --no-cache --public-url \".\"",
     "postbuild": "workbox generateSW"
   },
-  "cache": {
-    "inDev": false,
-    "strategy": "default"
-  },
   "devDependencies": {
-    "autoprefixer": "^10.4.5",
     "elm": "^0.19.1-5",
     "parcel": "^2.5.0",
     "parcel-plugin-sw-cache": "^0.2.5",
