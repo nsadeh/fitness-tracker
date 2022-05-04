@@ -12,13 +12,13 @@
     "parcel-plugin-sw-cache": "^0.2.5",
     "tailwindcss": "^1.8.10",
     "postcss-cli": "^7.1.0",
-    "autoprefixer": "^9.7.5"
-  },
-  "dependencies": {
+    "autoprefixer": "^9.7.5",
     "@parcel/packager-raw-url": "^2.5.0",
     "@parcel/transformer-css": "^2.5.0",
     "@parcel/transformer-elm": "^2.5.0",
-    "@parcel/transformer-webmanifest": "^2.5.0",
+    "@parcel/transformer-webmanifest": "^2.5.0"
+  },
+  "dependencies": {
     "bootstrap-icons": "^1.8.1",
     "node-elm-compiler": "^5.0.6",
     "workbox-cli": "^6.5.3"
