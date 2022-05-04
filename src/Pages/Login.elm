@@ -126,7 +126,7 @@ viewLogin =
             [ div [ class "pt-8 sm:pt-24 sm:justify-start justify-center" ]
                 [ p [ class "text-4xl sm:text-left text-center" ] [ text "Welcome to Fit.app!" ]
                 ]
-            , div [ class "flex flex-col justify-center p-4 sm:py-10" ]
+            , div [ class "flex flex-col justify-center p-4 sm:py-10 text-black" ]
                 [ input [ class "min-w-full border-2 rounded-md p-2 m-1", placeholder "Email", onInput EnteredEmail ] []
                 , input [ class "min-w-full border-2 rounded-md p-2 m-1", type_ "password", placeholder "Password", onInput EnteredPassword ] []
                 ]
