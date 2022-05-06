@@ -6,7 +6,7 @@ import Api.User as User exposing (storeUser)
 import Browser.Navigation as Nav exposing (Key)
 import Date exposing (Date, Unit(..), format, weekday)
 import Dict exposing (Dict)
-import Html exposing (Attribute, Html, a, button, div, form, h2, h3, h4, h5, input, label, p, small, span, text)
+import Html exposing (Attribute, Html, a, button, div, form, h2, h4, input, label, span, text)
 import Html.Attributes exposing (checked, class, disabled, for, href, id, placeholder, style, type_, value)
 import Html.Events exposing (onCheck, onClick, onInput, stopPropagationOn)
 import Http as H
@@ -517,7 +517,7 @@ view model =
                                 [ text (dateToString data.today) ]
                             , a [ class "invisible sm:visible my-auto hover:text-blue-400", href (nextDay data.today |> makeExerciseUrl) ] [ text "tomorrow >" ]
                             ]
-                        , div [] exerciseList
+                        , div [ class "overflow-y-scroll sm:mx-0 mx-1" ] exerciseList
                         , input [ type_ "checkbox", class "opacity-0 h-0 absolute", onCheck (\_ -> CreateFormToggled |> CreateNew), checked (isEditorToggled data) ] []
                         , div
                             [ class
@@ -541,7 +541,7 @@ view model =
                         ]
                     ]
                 , case data.openMobile of
-                    Just id ->
+                    Just _ ->
                         div [] []
 
                     -- OrderedDict.get id data.workout
@@ -558,7 +558,7 @@ viewExercises logged expanded id exercise =
         ( weights, reps ) =
             getSetRanges exercise.sets
     in
-    div [ class "border rounded-md border-blue-400 mb-1" ]
+    div [ class "border rounded-md border-blue-400 mb-3 drop-shadow-2xl h-fit" ]
         [ div
             [ class
                 ("cursor-pointer flex flex-row justify-between py-2 px-2"
@@ -571,8 +571,10 @@ viewExercises logged expanded id exercise =
                 )
             , onClick (Toggled id |> Select)
             ]
-            [ div [ class "w-56 text-xl content-center my-auto" ]
-                [ text exercise.name
+            [ div [ class "flex my-auto" ]
+                [ div [ class "w-56 text-xl content-center" ]
+                    [ text exercise.name
+                    ]
                 ]
             , div [ class "flex flex-row w-48 justify-between my-auto" ]
                 [ div []
@@ -636,7 +638,7 @@ overrideOnClickWith msg =
 viewSet : (String -> Int -> Bool) -> String -> Int -> StrengthSet -> Html Msg
 viewSet logged exerciseId num set =
     div [ class "flex flex-row border-b border-blue-400 justify-between py-auto px-2" ]
-        [ div [ class "d-flex justify-center my-auto mr-3" ]
+        [ div [ class "d-flex justify-center my-auto mr-3 sm:block hidden" ]
             [ h2 [ class "text-xl" ]
                 [ text (String.fromInt (num + 1) ++ ".")
                 ]
@@ -683,7 +685,7 @@ viewSet logged exerciseId num set =
                 ]
             ]
         , div []
-            [ button [ type_ "button", class "border-2 border-blue-400 w-24 rounded-md m-2 p-2 hover:bg-blue-400", overrideOnClickWith (LogSet exerciseId num set |> Log) ]
+            [ button [ type_ "button", class "border-2 border-blue-400 sm:w-24 w-20 rounded-md m-2 p-2 hover:bg-blue-400", overrideOnClickWith (LogSet exerciseId num set |> Log) ]
                 [ text "Log set"
                 ]
             ]
@@ -732,7 +734,7 @@ viewForm : WorkoutCreator -> Html Msg
 viewForm form =
     div []
         [ div [ class "flex flex-col border border-blue-400 w-24 rounded-md w-full" ]
-            [ div [ class "flex sm:flex-row flex-col sm:justify-around justify-center sm:h-16 h-24 pl-3 sm:pl-0"]
+            [ div [ class "flex sm:flex-row flex-col sm:justify-around justify-center sm:h-16 h-24 pl-3 sm:pl-0" ]
                 [ div [ class "flex flex-row my-auto" ]
                     [ div []
                         [ h2 [ class "text-xl mr-4" ] [ text "Name: " ]
@@ -748,8 +750,8 @@ viewForm form =
                         ]
                     ]
                 , div [ class "flex flex-row my-auto" ]
-                    [ div [ ]
-                        [ h4 [ class "text-xl mr-4"] [ text "Num sets: " ]
+                    [ div []
+                        [ h4 [ class "text-xl mr-4" ] [ text "Num sets: " ]
                         ]
                     , div []
                         [ input
@@ -769,7 +771,7 @@ viewForm form =
                         ]
                     ]
                 ]
-            , div [ class "h-80 overflow-scroll" ] [ viewSetForm form ]
+            , div [] [ viewSetForm form ]
             , div [ class "flex justify-center" ]
                 [ button [ class "border-2 border-blue-400 w-30 rounded-md mt-1 mb-3 p-2 hover:bg-blue-400", onClick (CreateNewExercise |> CreateNew) ]
                     [ text "Create set!" ]
@@ -780,23 +782,23 @@ viewForm form =
 
 viewSetForm : WorkoutCreator -> Html Msg
 viewSetForm form =
-    div [] (List.range 1 form.numSets |> List.map viewFormSingleSet)
+    div [ class "flex flex-col overflow-y-scroll overflow-x-hidden" ] (List.range 1 form.numSets |> List.map viewFormSingleSet)
 
 
 viewFormSingleSet : Int -> Html Msg
 viewFormSingleSet index =
     div [ class "flex flex-row justify-between px-6 pb-3" ]
-        [ div [ ]
-            [ h4 [class "text-lg"] [ text (String.fromInt index ++ ".") ]
+        [ div []
+            [ h4 [ class "text-lg" ] [ text (String.fromInt index ++ ".") ]
             ]
         , div [ class "flex flow-row" ]
             [ h4 [ class "text-lg pr-2" ]
                 [ text "Starting weight: " ]
-            , input [ class "border rounded-md bg-blue-100 text-black pr-3", placeholder "Weight", type_ "number", onInput (\weight -> UpdatedSetWeight index (String.toFloat weight |> withDefault 0) |> CreateNew) ] []
+            , input [ class "sm:w-fit w-24 flex border rounded-md bg-blue-100 text-black pr-3", placeholder "Weight", type_ "number", onInput (\weight -> UpdatedSetWeight index (String.toFloat weight |> withDefault 0) |> CreateNew) ] []
             ]
         , div [ class "flex flow-row" ]
             [ h4 [ class "text-lg pr-2" ] [ text "Reps: " ]
-            , input [ class "border rounded-md bg-blue-100 text-black pr-3", placeholder "Reps", type_ "number", onInput (\reps -> UpdatedSetReps index (String.toInt reps |> withDefault 0) |> CreateNew) ] []
+            , input [ class "sm:w-fit w-24 flex border rounded-md bg-blue-100 text-black pr-3", placeholder "Reps", type_ "number", onInput (\reps -> UpdatedSetReps index (String.toInt reps |> withDefault 0) |> CreateNew) ] []
             ]
         ]
 
@@ -834,8 +836,8 @@ viewExerciseEditor ( exerciseId, exercise ) =
 viewEditFormLine : Int -> StrengthSet -> Html Msg
 viewEditFormLine index set =
     div [ class "flex flex-row my-2 h-11" ]
-        [ div [  class "pr-2" ]
-            [ span [ ]
+        [ div [ class "pr-2" ]
+            [ span []
                 [ text (String.fromInt (index + 1) ++ ".") ]
             ]
         , div [ class "flex flex-row pr-3" ]
@@ -853,7 +855,7 @@ viewEditFormLine index set =
                     )
                 ]
                 []
-            , label [ class "text-md" ,for ( "reps-editor-" ++( String.fromInt index)) ] [ text "reps" ]
+            , label [ class "text-md", for ("reps-editor-" ++ String.fromInt index) ] [ text "reps" ]
             ]
         , div [ class "flex flex-row pr-3" ]
             [ input
@@ -869,7 +871,7 @@ viewEditFormLine index set =
                     )
                 ]
                 []
-            , label [ class "text-md", for ( "weight-editor-" ++( String.fromInt index)) ] [ text "lbs" ]
+            , label [ class "text-md", for ("weight-editor-" ++ String.fromInt index) ] [ text "lbs" ]
             ]
         , div [ class "flex items-center" ]
             [ button [ class "border-2 border-red-400 w-30 rounded-md hover:bg-red-400", type_ "button", overrideOnClickWith (RemoveSetFromEditor index |> Edit) ] [ text "Remove" ]
