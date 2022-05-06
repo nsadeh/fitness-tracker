@@ -6,7 +6,7 @@ import Api.User as User exposing (storeUser)
 import Browser.Navigation as Nav exposing (Key)
 import Date exposing (Date, Unit(..), format, weekday)
 import Dict exposing (Dict)
-import Html exposing (Attribute, Html, a, button, div, form, h2, h3, h4, h5, input, label, small, span, text)
+import Html exposing (Attribute, Html, a, button, div, form, h2, h3, h4, h5, input, label, p, small, span, text)
 import Html.Attributes exposing (checked, class, disabled, for, href, id, placeholder, style, type_, value)
 import Html.Events exposing (onCheck, onClick, onInput, stopPropagationOn)
 import Http as H
@@ -448,7 +448,7 @@ nextDay date =
 
 dateToString : Date -> String
 dateToString date =
-    format "EEE MMMM d y" date
+    format "EEE, MMMM d" date
 
 
 makeExerciseUrl : Date -> String
@@ -504,24 +504,33 @@ view model =
                         |> OrderedDict.map (viewExercises (isLogged data) isToggled)
                         |> OrderedDict.values
             in
-            div [ class "workouts" ]
+            div [ class "flex justify-center w-full bg-gray-900 sm:px-3" ]
                 [ Maybe.map
                     viewExerciseEditor
                     data.workoutEditor
                     |> Maybe.withDefault (div [] [])
-                , div [ class "row" ]
-                    [ div [ class "col-lg" ]
-                        [ div ([ class "container-fluid navbar navbar-expand-lg navbar-light border rounded", style "margin-bottom" "3px" ] ++ Swiper.onSwipeEvents (\e -> Swiped e |> Select))
-                            [ a [ class "btn btn-outline-dark", href (prevDay data.today |> makeExerciseUrl) ] [ text "<" ]
-                            , h2 [ class "mx-auto" ]
+                , div [ class "w-screen text-blue-200" ]
+                    [ div []
+                        [ div (class "flex flex-row justify-between border-b-2 border-blue-400 mb-3 p-2 pb-2" :: Swiper.onSwipeEvents (\e -> Swiped e |> Select))
+                            [ a [ class "invisible sm:visible my-auto hover:text-blue-400", href (prevDay data.today |> makeExerciseUrl) ] [ text "< yesterday" ]
+                            , h2 [ class "text-4xl text-center" ]
                                 [ text (dateToString data.today) ]
-                            , a [ class "btn btn-outline-dark", href (nextDay data.today |> makeExerciseUrl) ] [ text ">" ]
+                            , a [ class "invisible sm:visible my-auto hover:text-blue-400", href (nextDay data.today |> makeExerciseUrl) ] [ text "tomorrow >" ]
                             ]
                         , div [] exerciseList
-                        , input [ type_ "checkbox", class "fake-checkbox", onCheck (\_ -> CreateFormToggled |> CreateNew), checked (isEditorToggled data) ] []
-                        , viewForm data.form
-                        , div [ class "d-flex p-2" ]
-                            [ button [ class "btn btn-outline-dark mx-auto bg-light", style "width" "90%", onClick (CreateFormToggled |> CreateNew) ]
+                        , input [ type_ "checkbox", class "opacity-0 h-0 absolute", onCheck (\_ -> CreateFormToggled |> CreateNew), checked (isEditorToggled data) ] []
+                        , div
+                            [ class
+                                (if isEditorToggled data then
+                                    "visible"
+
+                                 else
+                                    "hidden"
+                                )
+                            ]
+                            [ viewForm data.form ]
+                        , div [ class "flex justify-center" ]
+                            [ button [ class "border-2 border-blue-400 w-24 rounded-md m-2 p-2 hover:bg-blue-400 w-11/12", onClick (CreateFormToggled |> CreateNew) ]
                                 [ if isEditorToggled data then
                                     text "-"
 
@@ -533,10 +542,11 @@ view model =
                     ]
                 , case data.openMobile of
                     Just id ->
-                        OrderedDict.get id data.workout
-                            |> Maybe.map (viewSetModal (isLogged data) id)
-                            |> Maybe.withDefault (div [] [])
+                        div [] []
 
+                    -- OrderedDict.get id data.workout
+                    --     |> Maybe.map (viewSetModal (isLogged data) id)
+                    --     |> Maybe.withDefault (div [] [])
                     Nothing ->
                         div [] []
                 ]
@@ -548,63 +558,68 @@ viewExercises logged expanded id exercise =
         ( weights, reps ) =
             getSetRanges exercise.sets
     in
-    div [ class "container-fluid border border-5 rounded list-group", style "padding-right" "0px", style "margin-bottom" "2px" ]
+    div [ class "border rounded-md border-blue-400 mb-1" ]
         [ div
             [ class
-                ("list-group-item bg-light border-5"
+                ("cursor-pointer flex flex-row justify-between py-2 px-2"
                     ++ (if expanded id then
-                            ""
+                            " border-b border-blue-400"
 
                         else
-                            " rounded-bottom"
+                            ""
                        )
                 )
             , onClick (Toggled id |> Select)
             ]
-            [ div [ class "row justify-content-between" ]
-                [ div [ class "col-sm-6" ]
-                    [ h4 [ style "font-size-adjust" "0.3", style "width" "100%" ]
-                        [ text exercise.name
-                        ]
-                    ]
-                , div [ class "row col-sm-3 justify-content-between" ]
-                    [ h4 []
+            [ div [ class "w-56 text-xl content-center my-auto" ]
+                [ text exercise.name
+                ]
+            , div [ class "flex flex-row w-48 justify-between my-auto" ]
+                [ div []
+                    [ span [ class "text-xl" ]
                         [ text (String.fromInt (List.length exercise.sets))
-                        , small [ style "font-size" "0.5em" ]
-                            [ text "sets"
-                            ]
                         ]
-                    , div []
-                        [ h4 []
-                            [ text weights
-                            , small [ style "font-size" "0.5em" ]
-                                [ text "lbs"
-                                ]
-                            ]
-                        ]
-                    , div []
-                        [ h4 []
-                            [ text reps
-                            , small [ style "font-size" "0.5em" ]
-                                [ text "reps"
-                                ]
-                            ]
+                    , span [ class "text-xs" ]
+                        [ text "sets"
                         ]
                     ]
-                , div [ class "col-sm-3" ]
-                    [ div [ class "d-flex justify-content-end buttons" ]
-                        [ button [ type_ "button", class "btn btn-outline-primary visible-large", overrideOnClickWith (LogSets id exercise.sets |> Log) ]
-                            [ text "Log all!"
-                            ]
-                        , button [ style "margin-left" "5px", type_ "button", class "btn btn-outline-dark edit-button", overrideOnClickWith (OpenWorkoutEditor id |> Edit) ]
-                            [ text "Edit"
-                            ]
+                , div []
+                    [ span [ class "text-xl" ]
+                        [ text weights ]
+                    , span [ class "text-xs" ]
+                        [ text "lbs"
+                        ]
+                    ]
+                , div []
+                    [ span [ class "text-xl" ]
+                        [ text reps ]
+                    , span [ class "text-xs" ]
+                        [ text "reps"
+                        ]
+                    ]
+                ]
+            , div []
+                [ div [ class "flex flex-row" ]
+                    [ button [ type_ "button", class "border-2 border-red-400 w-24 rounded-md m-2 p-2 hover:bg-red-400 sm:block hidden", overrideOnClickWith (OpenWorkoutEditor id |> Edit) ]
+                        [ text "Edit"
+                        ]
+                    , button [ type_ "button", class "border-2 border-blue-400 w-24 rounded-md m-2 p-2 hover:bg-blue-400 sm:block hidden", overrideOnClickWith (LogSets id exercise.sets |> Log) ]
+                        [ text "Log all!"
                         ]
                     ]
                 ]
             ]
-        , input [ type_ "checkbox", class "fake-checkbox", checked (expanded id), onCheck (\_ -> Toggled id |> Select) ] []
-        , div [ class "slide" ] (List.indexedMap (viewSet logged id) exercise.sets)
+        , input [ type_ "checkbox", class "opacity-0 h-0 absolute", checked (expanded id), onCheck (\_ -> Toggled id |> Select) ] []
+        , div
+            [ class
+                (if expanded id then
+                    "transition-all ease-in-out duration-700 clear-both"
+
+                 else
+                    "hidden overflow-hidden transition-all ease-in-out duration-700 clear-both"
+                )
+            ]
+            (List.indexedMap (viewSet logged id) exercise.sets)
         ]
 
 
@@ -620,71 +635,56 @@ overrideOnClickWith msg =
 
 viewSet : (String -> Int -> Bool) -> String -> Int -> StrengthSet -> Html Msg
 viewSet logged exerciseId num set =
-    div [ class "container-fluid list-group-item bg-light border-5" ]
-        [ div [ class "row justify-content-between", style "white-space" "nowrap" ]
-            [ div [ class "d-flex justify-content-start" ]
-                [ h2 [ class "visible-large", style "margin-top" ".5rem" ]
-                    [ text (String.fromInt (num + 1) ++ ".")
+    div [ class "flex flex-row border-b border-blue-400 justify-between py-auto px-2" ]
+        [ div [ class "d-flex justify-center my-auto mr-3" ]
+            [ h2 [ class "text-xl" ]
+                [ text (String.fromInt (num + 1) ++ ".")
+                ]
+            ]
+        , div [ class "flex flex-row justify-between my-auto w-auto" ]
+            [ div [ class "flex flex-row justify-between sm:mr-10 mr-5" ]
+                [ h2 [ class "text-xl" ]
+                    [ text (String.fromFloat set.weight)
+                    , span [ class "text-xs" ] [ text "lbs" ]
                     ]
-                , h4 [ class "visible-small", style "margin-top" ".5rem" ]
-                    [ text (String.fromInt (num + 1) ++ ".")
+                , div [ class "ml-3" ]
+                    [ input
+                        [ type_ "number"
+                        , class "w-16 border rounded-md bg-blue-100 text-black"
+                        , value (String.fromFloat set.weight)
+                        , disabled (logged exerciseId num)
+                        , onInput
+                            (\weight ->
+                                String.toFloat weight
+                                    |> Maybe.withDefault 0.0
+                                    |> EditWeight exerciseId num
+                                    |> Log
+                            )
+                        ]
+                        []
                     ]
                 ]
-            , div [ class "row col-sm-6 justify-content-around", style "margin-top" ".5rem" ]
-                [ div [ class "row justify-content-center" ]
-                    [ h3 [ class "visible-large" ]
-                        [ text (String.fromFloat set.weight)
-                        , small [ style "font-size" "0.5em", style "margin-right" "2px" ] [ text "lbs" ]
-                        ]
-                    , h5 [ class "visible-small" ]
-                        [ text (String.fromFloat set.weight)
-                        , small [ style "font-size" "0.5em", style "margin-right" "2px" ] [ text "lbs" ]
-                        ]
-                    , div [ style "max-width" "70px", style "margin-left" "2px", id "weight" ]
-                        [ input
-                            [ type_ "number"
-                            , class "form-control"
-                            , value (String.fromFloat set.weight)
-                            , disabled (logged exerciseId num)
-                            , onInput
-                                (\weight ->
-                                    String.toFloat weight
-                                        |> Maybe.withDefault 0.0
-                                        |> EditWeight exerciseId num
-                                        |> Log
-                                )
-                            ]
-                            []
+            , div [ class "flex flex-row justify-between mr-3" ]
+                [ h2 [ class "text-xl" ]
+                    [ text (String.fromInt set.reps)
+                    , span [ class "text-xs" ]
+                        [ text "reps"
                         ]
                     ]
-                , div [ class "row justify-content-center" ]
-                    [ h3 [ class "visible-large", style "padding-right" "2px" ]
-                        [ text (String.fromInt set.reps)
-                        , small [ style "font-size" "0.5em" ]
-                            [ text "reps"
-                            ]
+                , div [ class "ml-3" ]
+                    [ input
+                        [ type_ "number"
+                        , class "w-16 border rounded-md bg-blue-100 text-black"
+                        , value (String.fromInt set.reps)
+                        , disabled (logged exerciseId num)
                         ]
-                    , h5 [ class "visible-small", style "padding-right" "2px" ]
-                        [ text (String.fromInt set.reps)
-                        , small [ style "font-size" "0.5em" ]
-                            [ text "reps"
-                            ]
-                        ]
-                    , div [ style "max-width" "70px", style "margin-left" "2px" ]
-                        [ input
-                            [ type_ "number"
-                            , class "form-control"
-                            , value (String.fromInt set.reps)
-                            , disabled (logged exerciseId num)
-                            ]
-                            []
-                        ]
+                        []
                     ]
                 ]
-            , div [ class "col-sm-2 d-flex justify-log-button", style "margin-top" ".5rem" ]
-                [ button [ type_ "button", class "btn btn-outline-dark", overrideOnClickWith (LogSet exerciseId num set |> Log) ]
-                    [ text "Log set"
-                    ]
+            ]
+        , div []
+            [ button [ type_ "button", class "border-2 border-blue-400 w-24 rounded-md m-2 p-2 hover:bg-blue-400", overrideOnClickWith (LogSet exerciseId num set |> Log) ]
+                [ text "Log set"
                 ]
             ]
         ]
@@ -730,23 +730,30 @@ getSetRanges sets =
 
 viewForm : WorkoutCreator -> Html Msg
 viewForm form =
-    div [ class "editor" ]
-        [ div [ class "list-group border border-5 rounded bg-light" ]
-            [ div [ class "list-group-item bg-light" ]
-                [ div [ class "container-fluid row", style "margin-bottom" "10px" ]
-                    [ div [ class "col-sm-2" ]
-                        [ h4 [] [ text "Name: " ]
+    div []
+        [ div [ class "flex flex-col border border-blue-400 w-24 rounded-md w-full" ]
+            [ div [ class "flex sm:flex-row flex-col sm:justify-around justify-center sm:h-16 h-24 pl-3 sm:pl-0"]
+                [ div [ class "flex flex-row my-auto" ]
+                    [ div []
+                        [ h2 [ class "text-xl mr-4" ] [ text "Name: " ]
                         ]
-                    , div [ class "col" ]
-                        [ input [ class "form-control", placeholder "Name", onInput (\s -> ChangedWorkoutName s |> CreateNew), value form.name ] [] ]
-                    ]
-                , div [ class "container-fluid row" ]
-                    [ div [ class "col-sm-2" ]
-                        [ h4 [] [ text "Num sets: " ]
-                        ]
-                    , div [ class "col" ]
+                    , div []
                         [ input
-                            [ class "form-control"
+                            [ class "w-80 border rounded-md bg-blue-100 text-black"
+                            , placeholder "Name"
+                            , onInput (\s -> ChangedWorkoutName s |> CreateNew)
+                            , value form.name
+                            ]
+                            []
+                        ]
+                    ]
+                , div [ class "flex flex-row my-auto" ]
+                    [ div [ ]
+                        [ h4 [ class "text-xl mr-4"] [ text "Num sets: " ]
+                        ]
+                    , div []
+                        [ input
+                            [ class "w-80 border rounded-md bg-blue-100 text-black"
                             , placeholder "Sets"
                             , type_ "number"
                             , value
@@ -761,11 +768,11 @@ viewForm form =
                             []
                         ]
                     ]
-                , div [ style "overflow" "scroll", style "max-height" "300px" ] [ viewSetForm form ]
-                , div [ class "d-flex justify-content-center" ]
-                    [ button [ class "btn btn-outline-dark mx-auto", style "margin-top" "30px", style "width" "50%", onClick (CreateNewExercise |> CreateNew) ]
-                        [ text "Create set!" ]
-                    ]
+                ]
+            , div [ class "h-80 overflow-scroll" ] [ viewSetForm form ]
+            , div [ class "flex justify-center" ]
+                [ button [ class "border-2 border-blue-400 w-30 rounded-md mt-1 mb-3 p-2 hover:bg-blue-400", onClick (CreateNewExercise |> CreateNew) ]
+                    [ text "Create set!" ]
                 ]
             ]
         ]
@@ -778,18 +785,18 @@ viewSetForm form =
 
 viewFormSingleSet : Int -> Html Msg
 viewFormSingleSet index =
-    div [ class "container-fluid row", style "margin-top" "20px" ]
-        [ div [ class "col-sm-2" ]
-            [ h4 [] [ text (String.fromInt index ++ ".") ]
+    div [ class "flex flex-row justify-between px-6 pb-3" ]
+        [ div [ ]
+            [ h4 [class "text-lg"] [ text (String.fromInt index ++ ".") ]
             ]
-        , div [ class "col-sm-4 flow-row d-flex" ]
-            [ h4 [ style "width" "77%", style "margin-right" "10px" ]
+        , div [ class "flex flow-row" ]
+            [ h4 [ class "text-lg pr-2" ]
                 [ text "Starting weight: " ]
-            , input [ class "form-control", placeholder "Weight", type_ "number", onInput (\weight -> UpdatedSetWeight index (String.toFloat weight |> withDefault 0) |> CreateNew) ] []
+            , input [ class "border rounded-md bg-blue-100 text-black pr-3", placeholder "Weight", type_ "number", onInput (\weight -> UpdatedSetWeight index (String.toFloat weight |> withDefault 0) |> CreateNew) ] []
             ]
-        , div [ class "col-sm-4 d-flex flow-row" ]
-            [ h4 [ style "margin-right" "10px" ] [ text "Reps: " ]
-            , input [ class "form-control", placeholder "Reps", type_ "number", onInput (\reps -> UpdatedSetReps index (String.toInt reps |> withDefault 0) |> CreateNew) ] []
+        , div [ class "flex flow-row" ]
+            [ h4 [ class "text-lg pr-2" ] [ text "Reps: " ]
+            , input [ class "border rounded-md bg-blue-100 text-black pr-3", placeholder "Reps", type_ "number", onInput (\reps -> UpdatedSetReps index (String.toInt reps |> withDefault 0) |> CreateNew) ] []
             ]
         ]
 
@@ -797,50 +804,28 @@ viewFormSingleSet index =
 viewExerciseEditor : ( String, StrengthExercise ) -> Html Msg
 viewExerciseEditor ( exerciseId, exercise ) =
     div
-        [ style "position" "fixed"
-        , style "top" "0"
-        , style "bottom" "0"
-        , style "right" "0"
-        , style "left" "0"
-        , style "display" "flex"
-        , style "align-items" "center"
-        , style "justify-content" "center"
-        , style "background-color" "rgba(33, 43, 54, 0.4)"
-        , style "z-index" "1"
-        , style "overflow-y" "scroll"
+        [ class "fixed inset-0 flex items-center justify-center bg-gray-800 bg-opacity-50 overflow-y-scroll z-10"
         , onClick (CloseWorkoutEditor |> Edit)
         ]
         [ div
-            [ class "px-3"
-            , style "border-style" "solid"
-            , style "border-radius" "3px"
-            , style "border-color" "white"
-            , style "background-color" "white"
-            , style "height" "500px"
-            , style "width" "440px"
-            , style "display" "flex"
-            , style "flex-direction" "column"
-            , style "align-items" "center"
+            [ class "px-3 border-2 border-blue-400 rounded-md bg-blue-900 h-auto w-auto flex flex-col items-center text-blue-200"
             , overrideOnClickWith NoOp
             ]
-            [ h2 [ style "margin-bottom" "15px", style "margin-top" "15px" ]
+            [ h2 [ class "text-3xl px-5 pt-2 text-blue-200" ]
                 [ text ("Edit " ++ exercise.name)
                 ]
             , div
-                [ class "container mx-auto"
-                , style "justify-content" "center"
-                , style "padding" "25px"
-                , style "overflow" "scroll"
+                [ class "flex flex-col justify-center overflow-scroll w-full p-3 mx-auto"
                 ]
                 (List.indexedMap viewEditFormLine exercise.sets)
-            , div [ class "d-flex", style "width" "100%", style "margin-top" "15px", style "margin-bottom" "15px" ]
-                [ button [ class "btn btn-outline-dark mx-auto bg-light", style "width" "90%", overrideOnClickWith (AddSetToWorkout |> Edit) ]
+            , div [ class "flex flex-row justify-center w-6/12" ]
+                [ button [ class "border-2 border-blue-400 w-full rounded-md mt-1 mb-3 p-2 hover:bg-blue-400", overrideOnClickWith (AddSetToWorkout |> Edit) ]
                     [ text "Add set"
                     ]
                 ]
-            , div [ class "d-flex justify-content-between mt-auto", style "margin-bottom" "15px", style "width" "50%" ]
-                [ button [ class "btn btn-outline-danger", overrideOnClickWith (DeleteExercise exerciseId |> Edit) ] [ text "Delete" ]
-                , button [ class "btn btn-outline-primary", overrideOnClickWith (EditWorkoutSets exerciseId exercise.sets |> Edit) ] [ text "Submit" ]
+            , div [ class "flex flex-row justify-between w-6/12" ]
+                [ button [ class "border-2 border-red-400 rounded-md mt-1 mb-3 p-2 hover:bg-red-400 w-5/12", overrideOnClickWith (DeleteExercise exerciseId |> Edit) ] [ text "Delete" ]
+                , button [ class "border-2 border-blue-400 rounded-md mt-1 mb-3 p-2 hover:bg-blue-400 w-5/12", overrideOnClickWith (EditWorkoutSets exerciseId exercise.sets |> Edit) ] [ text "Submit" ]
                 ]
             ]
         ]
@@ -848,17 +833,15 @@ viewExerciseEditor ( exerciseId, exercise ) =
 
 viewEditFormLine : Int -> StrengthSet -> Html Msg
 viewEditFormLine index set =
-    div [ class "row mx-auto justify-content-between form-inline", style "margin-bottom" "5px" ]
-        [ label [ for "reps-editor", class "fs-1 fw-bold" ]
-            [ span [ class "fs-1 fw-bold" ]
+    div [ class "flex flex-row my-2 h-11" ]
+        [ div [  class "pr-2" ]
+            [ span [ ]
                 [ text (String.fromInt (index + 1) ++ ".") ]
             ]
-        , div [ class "row" ]
+        , div [ class "flex flex-row pr-3" ]
             [ input
                 [ id "reps-editor"
-                , class "form-control"
-                , style "margin-right" "7px"
-                , style "width" "75px"
+                , class "border rounded-md bg-blue-100 text-black pr-3"
                 , type_ "number"
                 , value (String.fromInt set.reps)
                 , onInput
@@ -870,13 +853,11 @@ viewEditFormLine index set =
                     )
                 ]
                 []
-            , label [ for "reps-editor" ] [ text "reps" ]
+            , label [ class "text-md" ,for ( "reps-editor-" ++( String.fromInt index)) ] [ text "reps" ]
             ]
-        , div [ class "row" ]
+        , div [ class "flex flex-row pr-3" ]
             [ input
-                [ class "form-control"
-                , style "margin-right" "7px"
-                , style "width" "75px"
+                [ class "border rounded-md bg-blue-100 text-black pr-3"
                 , type_ "number"
                 , value (String.fromFloat set.weight)
                 , onInput
@@ -888,10 +869,10 @@ viewEditFormLine index set =
                     )
                 ]
                 []
-            , label [ for "reps-editor" ] [ text "lbs" ]
+            , label [ class "text-md", for ( "weight-editor-" ++( String.fromInt index)) ] [ text "lbs" ]
             ]
-        , div [ class "row" ]
-            [ button [ class "btn btn-outline-danger", type_ "button", overrideOnClickWith (RemoveSetFromEditor index |> Edit) ] [ text "Remove" ]
+        , div [ class "flex items-center" ]
+            [ button [ class "border-2 border-red-400 w-30 rounded-md hover:bg-red-400", type_ "button", overrideOnClickWith (RemoveSetFromEditor index |> Edit) ] [ text "Remove" ]
             ]
         ]
 
