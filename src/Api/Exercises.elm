@@ -8,7 +8,7 @@ import Json.Decode.Extra exposing (..)
 import Json.Encode as E
 import Platform exposing (Task)
 import Result as Result
-import StrengthSet exposing (StrengthExercise, StrengthSet, decodeExercise, decodeSet, encodeExercise, encodeSet)
+import StrengthSet exposing (LoggedStrengthExercise, StrengthExercise, StrengthSet, decodeExercise, decodeSet, encodeExercise, encodeSet, logSetInExercise, markAsLogged)
 import Task
 import Time
 import Utils.OrderedDict exposing (OrderedDict, empty, filter, insert, map, remove, update)
@@ -26,8 +26,9 @@ type alias ExerciseId =
 
 type alias API =
     { getWorkout : Date -> Task RequestError Workout
+    , getLoggedWorkouts : Date -> Task RequestError (OrderedDict String LoggedStrengthExercise)
     , insert : InsertPayload -> Task RequestError ()
-    , logSet : ExerciseId -> StrengthSet -> Task RequestError ()
+    , logSet : ExerciseId -> Date -> Int -> StrengthSet -> Task RequestError ()
     , deleteExercise : ExerciseId -> Date -> Task RequestError ()
     , editSets : ExerciseId -> List StrengthSet -> Task RequestError ()
     , editName : ExerciseId -> String -> Task RequestError ()
@@ -37,8 +38,9 @@ type alias API =
 api : Url -> ApiKey -> AuthenticatedUser -> API
 api url key user =
     { getWorkout = getExercises url key user
+    , getLoggedWorkouts = getToday foldLoggedRow url key user
     , insert = \p -> insertJournalEntry url key user ( "", Insert p )
-    , logSet = \id set -> insertJournalEntry url key user ( id, LogSet set )
+    , logSet = \id loggedOn index set -> insertJournalEntry url key user ( id, LogSet { set = set, number = index, loggedOn = loggedOn } )
     , deleteExercise = \id date -> insertJournalEntry url key user ( id, Delete (DeleteExerciseRequest date) )
     , editSets = \id sets -> insertJournalEntry url key user ( id, Edit (ChangeSetsAndReps sets) )
     , editName = \id name -> insertJournalEntry url key user ( id, Edit (ChangeName name) )
@@ -49,29 +51,59 @@ api url key user =
 -- Implementation --
 
 
-getExercises : AuthenticatedRequest Date Workout
-getExercises url key user date =
+getToday : (JournalRow -> OrderedDict String ( Int, m ) -> OrderedDict String ( Int, m )) -> AuthenticatedRequest Date (OrderedDict String m)
+getToday parser url key user date =
     let
         rows =
-            H.task
-                { method = "GET"
-                , headers =
-                    [ H.header "apikey" key
-                    , H.header "Authorization" ("Bearer " ++ user.authToken)
-                    ]
-                , url = url ++ "/rest/v1/exercise_journal?user_id=eq." ++ user.userId
-                , body = H.emptyBody
-                , resolver = H.stringResolver resolveRow
-                , timeout = Nothing
-                }
+            getJournal url key user ()
 
         day =
             Date.weekday date
     in
     rows
-        |> mapTaskResult (List.foldl foldRow empty)
+        |> mapTaskResult (List.foldl parser empty)
         |> mapTaskResult (filter (\_ tuple -> Tuple.first tuple == weekdayToNumber day))
         |> mapTaskResult (map (\_ tuple -> Tuple.second tuple))
+
+
+getJournal : AuthenticatedRequest () (List JournalRow)
+getJournal url key user _ =
+    H.task
+        { method = "GET"
+        , headers =
+            [ H.header "apikey" key
+            , H.header "Authorization" ("Bearer " ++ user.authToken)
+            ]
+        , url = url ++ "/rest/v1/exercise_journal?user_id=eq." ++ user.userId ++ "&deleted=eq.false"
+        , body = H.emptyBody
+        , resolver = H.stringResolver resolveRow
+        , timeout = Nothing
+        }
+
+
+
+-- getLoggedExercises : AuthenticatedRequest Date Workout
+-- getLoggedExercises url key user date =
+--     let
+--         rows = getJournal url key user ()
+--     in
+
+
+getExercises : AuthenticatedRequest Date Workout
+getExercises =
+    getToday foldRow
+
+
+
+-- let
+--     rows = getJournal url key user ()
+--     day =
+--         Date.weekday date
+-- in
+-- rows
+--     |> mapTaskResult (List.foldl foldRow empty)
+--     |> mapTaskResult (filter (\_ tuple -> Tuple.first tuple == weekdayToNumber day))
+--     |> mapTaskResult (map (\_ tuple -> Tuple.second tuple))
 
 
 insertJournalEntry : AuthenticatedRequest ( String, Action ) ()
@@ -85,8 +117,8 @@ insertJournalEntry url key user ( id, action ) =
                 Delete request ->
                     encodeDeleteRequest id request
 
-                LogSet request ->
-                    encodeLogSet (LogSetRequest id request)
+                LogSet { loggedOn, set, number } ->
+                    encodeLogSet { exerciseId = id, loggedOn = loggedOn, set = set, index = number }
 
                 Edit request ->
                     encodeEditRequest id request
@@ -123,6 +155,34 @@ foldRow row workouts =
 
                 ChangeSetsAndReps sets ->
                     update row.exerciseId (Maybe.map (\( day, exercise ) -> ( day, { exercise | sets = sets } ))) workouts
+
+
+foldLoggedRow : JournalRow -> OrderedDict String ( Int, LoggedStrengthExercise ) -> OrderedDict String ( Int, LoggedStrengthExercise )
+foldLoggedRow row workouts =
+    case row.action of
+        Insert insertRequest ->
+            let
+                exercise =
+                    { name = insertRequest.exercise.name
+                    , sets = List.map (\set -> { todo = set, logged = Nothing }) insertRequest.exercise.sets
+                    , isSubmitted = False
+                    }
+            in
+            insert row.exerciseId ( weekdayToNumber insertRequest.day, exercise ) workouts
+
+        LogSet { loggedOn, set, number } ->
+            update row.exerciseId (Tuple.mapSecond (logSetInExercise set loggedOn number) |> Maybe.map) workouts
+
+        Delete _ ->
+            remove row.exerciseId workouts
+
+        Edit cr ->
+            case cr of
+                ChangeName name ->
+                    update row.exerciseId (Tuple.mapSecond (\ex -> { ex | name = name }) |> Maybe.map) workouts
+
+                ChangeSetsAndReps sets ->
+                    update row.exerciseId (Maybe.map <| Tuple.mapSecond (\ex -> { ex | sets = List.map markAsLogged sets })) workouts
 
 
 mapTaskResult : (r -> s) -> Task RequestError r -> Task RequestError s
@@ -202,7 +262,10 @@ decodePayload action =
             D.map Insert decodeInsert
 
         "LogSet" ->
-            D.map LogSet StrengthSet.decodeSet
+            D.map3 (\l i s -> LogSet { loggedOn = l, number = i, set = s })
+                (D.field "loggedOn" decodeDate)
+                (D.field "index" D.int)
+                (D.field "set" decodeSet)
 
         "DeleteExercise" ->
             D.map Delete decodeDelete
@@ -249,11 +312,17 @@ encodeInsertRequest request =
 
 
 encodeLogSet : LogSetRequest -> E.Value
-encodeLogSet request =
+encodeLogSet { exerciseId, set, loggedOn, index } =
     E.object
         [ ( "action_type", E.string "LogSet" )
-        , ( "payload", encodeSet request.set )
-        , ( "exercise_id", E.string request.exerciseId )
+        , ( "payload"
+          , E.object
+                [ ( "loggedOn", E.string <| Date.toIsoString loggedOn )
+                , ( "index", E.int index )
+                , ( "set", encodeSet set )
+                ]
+          )
+        , ( "exercise_id", E.string exerciseId )
         ]
 
 
@@ -295,6 +364,8 @@ encodeEditRequest exerciseId changeRequest =
 type alias LogSetRequest =
     { exerciseId : String
     , set : StrengthSet
+    , loggedOn : Date
+    , index : Int
     }
 
 
@@ -317,7 +388,7 @@ type ChangeExercise
 
 type Action
     = Insert InsertPayload
-    | LogSet StrengthSet
+    | LogSet { loggedOn : Date, set : StrengthSet, number : Int }
     | Delete DeleteExerciseRequest
     | Edit ChangeExercise
 

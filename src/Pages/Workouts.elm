@@ -7,13 +7,13 @@ import Browser.Navigation as Nav exposing (Key)
 import Date exposing (Date, Unit(..), format, weekday)
 import Dict exposing (Dict)
 import Html exposing (Attribute, Html, a, button, div, form, h2, h4, input, label, span, text)
-import Html.Attributes exposing (checked, class, disabled, for, href, id, placeholder, style, type_, value)
+import Html.Attributes exposing (checked, class, disabled, for, href, id, placeholder, type_, value)
 import Html.Events exposing (onCheck, onClick, onInput, stopPropagationOn)
 import Http as H
 import Json.Decode
 import Maybe exposing (withDefault)
 import Set exposing (Set)
-import StrengthSet exposing (StrengthExercise, StrengthSet, addLastSet, changeRepCountForExercise, changeWeightForExercise, removeSet)
+import StrengthSet exposing (LoggedStrenghtSet, LoggedStrengthExercise, StrengthExercise, StrengthSet, addLastSet, changeRepCountForExercise, changeWeightForExercise, removeSet)
 import Swiper
 import Task
 import Time
@@ -27,15 +27,24 @@ import WorkoutCreator exposing (WorkoutCreator, createNew, emptyForm, newSetReps
 
 -- MODEL --
 
+type alias WorkoutsPageState =
+    { api: Exercise.API
+    , user: AuthenticatedUser
+    , navKey: Nav.Key
+    , today: Date
+    , swipeState: Swiper.SwipingState
+    , editor: Maybe (String, StrengthExercise)
+    , creator: WorkoutCreator
+    , isOpen: String -> Bool
+    , workout: OrderedDict String Logg
+    }
+
 
 type alias WorkoutState =
     { api : Exercise.API
     , currentUser : AuthenticatedUser
-    , workout : OrderedDict String StrengthExercise
-    , lastWeek : OrderedDict String StrengthExercise
+    , workout : OrderedDict String LoggedStrengthExercise
     , open : Set String
-    , logged : Dict String (Set Int)
-    , openMobile : Maybe String
     , workoutEditor : Maybe ( String, StrengthExercise )
     , form : WorkoutCreator
     , today : Date
@@ -54,11 +63,22 @@ isEditorToggled data =
     data.form.isOpen
 
 
-isLogged : WorkoutState -> String -> Int -> Bool
-isLogged state id index =
-    Dict.get id state.logged
-        |> Maybe.map (Set.member index)
-        |> Maybe.withDefault False
+isLoggedToday : Date -> WorkoutState -> String -> Int -> Bool
+isLoggedToday today state id index =
+    OrderedDict.get id state.workout
+        |> Maybe.map (\w -> w.sets)
+        |> Maybe.map (\( date, sets ) -> List.length sets >= index && today == date)
+
+
+
+-- Dict.get id state.loggedToday
+--     |> Maybe.map (Set.member index)
+--     |> Maybe.withDefault False
+
+
+lastLogged : WorkoutState -> String -> Maybe (List ( Date, StrengthSet ))
+lastLogged state exerciseId =
+    Dict.get exerciseId state.logged
 
 
 
@@ -82,6 +102,7 @@ type Msg
 type SetupMessage
     = LoggedIn AuthenticatedUser Nav.Key (Maybe SelectionMessage)
     | FetchedWorkout Workout
+    | FetchedLoggedWorkout (OrderedDict String LoggedStrengthExercise)
     | FetchError RequestError
     | FailedRefresh RequestError Nav.Key
 
@@ -101,10 +122,7 @@ handleSetup msg model =
                                 { api = exerciseApi
                                 , currentUser = user
                                 , workout = OrderedDict.empty
-                                , lastWeek = OrderedDict.empty
-                                , logged = Dict.empty
                                 , open = Set.empty
-                                , openMobile = Nothing
                                 , workoutEditor = Nothing
                                 , form = emptyForm
                                 , today = Date.fromCalendarDate 2022 Time.Jan 1
@@ -133,6 +151,13 @@ handleSetup msg model =
                 FetchedWorkout workout ->
                     ( Authenticated { data | workout = workout }, Cmd.none )
 
+                FetchedLoggedWorkout _ ->
+                    log Info "fetched log workout" model
+
+                -- let
+                --     exercises = OrderedDict.map (\_ value -> asExercise value) workout
+                --     logged = OrderedDict.map (\_ value -> ())
+                -- in
                 FetchError err ->
                     case err of
                         Http (H.BadStatus 401) ->
@@ -360,11 +385,11 @@ handleLogging msg model =
                 LogSet id index _ ->
                     let
                         loggedIndices =
-                            Dict.get id data.logged
+                            Dict.get id data.loggedToday
                                 |> Maybe.map (\set -> Set.insert index set)
                                 |> Maybe.withDefault Set.empty
                     in
-                    Authenticated { data | logged = Dict.insert id loggedIndices data.logged } |> noOp
+                    Authenticated { data | loggedToday = Dict.insert id loggedIndices data.loggedToday } |> noOp
 
                 -- ( model, Task.attempt parseInsertResults (data.api.logSet id set) )
                 LogSets id sets ->
@@ -411,6 +436,16 @@ parseWorkout result =
     case result of
         Ok workout ->
             FetchedWorkout workout |> Setup
+
+        Err err ->
+            FetchError err |> Setup
+
+
+parseLoggedWorkout : Result RequestError (Dict String LoggedStrengthExercise) -> Msg
+parseLoggedWorkout result =
+    case result of
+        Ok _ ->
+            FetchError (NavError "no parser implemented") |> Setup
 
         Err err ->
             FetchError err |> Setup
@@ -501,7 +536,7 @@ view model =
 
                 exerciseList =
                     data.workout
-                        |> OrderedDict.map (viewExercises (isLogged data) isToggled)
+                        |> OrderedDict.map (viewExercises (isLoggedToday data) isToggled (lastLogged data))
                         |> OrderedDict.values
             in
             div [ class "flex justify-center w-full bg-gray-900 sm:px-3" ]
@@ -511,11 +546,11 @@ view model =
                     |> Maybe.withDefault (div [] [])
                 , div [ class "w-screen text-blue-200" ]
                     [ div []
-                        [ div (class "flex flex-row justify-between border-b-2 border-blue-400 mb-3 p-2 pb-2" :: Swiper.onSwipeEvents (\e -> Swiped e |> Select))
-                            [ a [ class "invisible sm:visible my-auto hover:text-blue-400", href (prevDay data.today |> makeExerciseUrl) ] [ text "< yesterday" ]
+                        [ div (class "flex flex-row sm:justify-between justify-center border-b-2 border-blue-400 mb-3 p-2 pb-2" :: Swiper.onSwipeEvents (\e -> Swiped e |> Select))
+                            [ a [ class "hidden sm:block my-auto hover:text-blue-400", href (prevDay data.today |> makeExerciseUrl) ] [ text "< yesterday" ]
                             , h2 [ class "text-4xl text-center" ]
                                 [ text (dateToString data.today) ]
-                            , a [ class "invisible sm:visible my-auto hover:text-blue-400", href (nextDay data.today |> makeExerciseUrl) ] [ text "tomorrow >" ]
+                            , a [ class "hidden sm:block my-auto hover:text-blue-400", href (nextDay data.today |> makeExerciseUrl) ] [ text "tomorrow >" ]
                             ]
                         , div [ class "overflow-y-scroll sm:mx-0 mx-1" ] exerciseList
                         , input [ type_ "checkbox", class "opacity-0 h-0 absolute", onCheck (\_ -> CreateFormToggled |> CreateNew), checked (isEditorToggled data) ] []
@@ -552,11 +587,22 @@ view model =
                 ]
 
 
-viewExercises : (String -> Int -> Bool) -> (String -> Bool) -> String -> StrengthExercise -> Html Msg
-viewExercises logged expanded id exercise =
+viewExercises : (String -> Int -> Bool) -> (String -> Bool) -> (String -> Maybe (List ( Date, StrengthSet ))) -> String -> StrengthExercise -> Html Msg
+viewExercises logged expanded loggedExercise id exercise =
     let
         ( weights, reps ) =
             getSetRanges exercise.sets
+
+        loggedEx =
+            loggedExercise id
+
+        workoutSets =
+            case loggedEx of
+                Nothing ->
+                    List.map (\set -> { todo = set, logged = Nothing }) exercise.sets
+
+                Just loggedSets ->
+                    List.map2 (\set ( date, loggedSet ) -> { today = set, logged = Just ( date, loggedSet ) }) exercise.sets loggedSets
     in
     div [ class "border rounded-md border-blue-400 mb-3 drop-shadow-2xl h-fit" ]
         [ div
@@ -621,7 +667,7 @@ viewExercises logged expanded id exercise =
                     "hidden overflow-hidden transition-all ease-in-out duration-700 clear-both"
                 )
             ]
-            (List.indexedMap (viewSet logged id) exercise.sets)
+            (List.indexedMap (viewSet logged id) workoutSets)
         ]
 
 
@@ -635,9 +681,37 @@ overrideOnClickWith msg =
     stopPropagationOn "click" (Json.Decode.map disableDefault (Json.Decode.succeed msg))
 
 
-viewSet : (String -> Int -> Bool) -> String -> Int -> StrengthSet -> Html Msg
+viewLastWeek : Bool -> Maybe ( Date, StrengthSet ) -> Html Msg
+viewLastWeek isReps log =
+    let
+        showData =
+            \set ->
+                if isReps then
+                    ( String.fromInt set.reps, "reps" )
+
+                else
+                    ( String.fromFloat set.weight, "lbs" )
+    in
+    case log of
+        Nothing ->
+            div [ class "text-xs text-center" ]
+                [ text "No logged data"
+                ]
+
+        Just ( date, set ) ->
+            let
+                ( data, units ) =
+                    showData set
+            in
+            div [ class "text-xl text-center" ]
+                [ text (format "EEE M/d" date ++ ": " ++ data)
+                , span [ class "text-xs" ] [ text units ]
+                ]
+
+
+viewSet : (String -> Int -> Bool) -> String -> Int -> LoggedStrenghtSet -> Html Msg
 viewSet logged exerciseId num set =
-    div [ class "flex flex-row border-b border-blue-400 justify-between py-auto px-2" ]
+    div [ class "flex flex-row border-b border-blue-400 justify-between py-auto px-1 sm:px-2 py-1" ]
         [ div [ class "d-flex justify-center my-auto mr-3 sm:block hidden" ]
             [ h2 [ class "text-xl" ]
                 [ text (String.fromInt (num + 1) ++ ".")
@@ -645,15 +719,19 @@ viewSet logged exerciseId num set =
             ]
         , div [ class "flex flex-row justify-between my-auto w-auto" ]
             [ div [ class "flex flex-row justify-between sm:mr-10 mr-5" ]
-                [ h2 [ class "text-xl" ]
-                    [ text (String.fromFloat set.weight)
-                    , span [ class "text-xs" ] [ text "lbs" ]
+                [ div [ class "flex flex-col justify-center" ]
+                    [ div [ class "hidden text-lg pb-1" ]
+                        [ text (String.fromFloat set.todo.weight)
+                        , span [ class "text-xs" ] [ text "lbs" ]
+                        ]
+                    , viewLastWeek True set.logged
                     ]
-                , div [ class "ml-3" ]
-                    [ input
+                , div [ class "ml-3 my-auto flex flex-col" ]
+                    [ div [ class "text-xs align-top" ] [ text "today(lbs):" ]
+                    , input
                         [ type_ "number"
-                        , class "w-16 border rounded-md bg-blue-100 text-black"
-                        , value (String.fromFloat set.weight)
+                        , class "align-middle w-16 border rounded-md bg-blue-100 text-black"
+                        , value (String.fromFloat set.todo.weight)
                         , disabled (logged exerciseId num)
                         , onInput
                             (\weight ->
@@ -666,18 +744,22 @@ viewSet logged exerciseId num set =
                         []
                     ]
                 ]
-            , div [ class "flex flex-row justify-between mr-3" ]
-                [ h2 [ class "text-xl" ]
-                    [ text (String.fromInt set.reps)
-                    , span [ class "text-xs" ]
-                        [ text "reps"
+            , div [ class "flex flex-row justify-between mr-1" ]
+                [ div [ class "flex flex-col justify-center" ]
+                    [ div [ class "hidden text-xl pb-1" ]
+                        [ text (String.fromInt set.todo.reps)
+                        , span [ class "text-xs" ]
+                            [ text "reps"
+                            ]
                         ]
+                    , viewLastWeek False set.logged
                     ]
-                , div [ class "ml-3" ]
-                    [ input
+                , div [ class "ml-3 my-auto flex flex-col" ]
+                    [ div [ class "text-xs align-top" ] [ text "today(rps):" ]
+                    , input
                         [ type_ "number"
-                        , class "w-16 border rounded-md bg-blue-100 text-black"
-                        , value (String.fromInt set.reps)
+                        , class "align-middle w-16 border rounded-md bg-blue-100 text-black"
+                        , value (String.fromInt set.todo.reps)
                         , disabled (logged exerciseId num)
                         ]
                         []
@@ -685,7 +767,7 @@ viewSet logged exerciseId num set =
                 ]
             ]
         , div []
-            [ button [ type_ "button", class "border-2 border-blue-400 sm:w-24 w-20 rounded-md m-2 p-2 hover:bg-blue-400", overrideOnClickWith (LogSet exerciseId num set |> Log) ]
+            [ button [ type_ "button", class "border-2 border-blue-400 sm:w-24 w-20 rounded-md sm:m-2 my-2 ml-1 sm:p-2 p-1 hover:bg-blue-400", overrideOnClickWith (LogSet exerciseId num set.todo |> Log) ]
                 [ text "Log set"
                 ]
             ]
@@ -879,40 +961,41 @@ viewEditFormLine index set =
         ]
 
 
-viewSetModal : (String -> Int -> Bool) -> String -> StrengthExercise -> Html Msg
-viewSetModal logged id exercise =
-    div
-        [ class "view-set-modal"
-        , style "position" "fixed"
-        , style "top" "0"
-        , style "bottom" "0"
-        , style "right" "0"
-        , style "left" "0"
-        , style "align-items" "center"
-        , style "justify-content" "center"
-        , style "background-color" "rgba(33, 43, 54, 0.4)"
-        , onClick (Toggled id |> Select)
-        ]
-        [ div
-            [ class "px-3"
-            , style "border-style" "solid"
-            , style "border-radius" "3px"
-            , style "border-color" "white"
-            , style "background-color" "white"
-            , style "height" "70%"
-            , style "width" "80%"
-            , style "display" "flex"
-            , style "flex-direction" "column"
-            , style "align-items" "center"
-            , style "overflow" "scroll"
-            , overrideOnClickWith NoOp
-            ]
-            [ h2 [ style "text-align" "center" ]
-                [ text exercise.name
-                ]
-            , div [] (List.indexedMap (viewSet logged id) exercise.sets)
-            , button [ type_ "button", class "btn btn-outline-primary mt-auto mb-2", overrideOnClickWith (LogSets id exercise.sets |> Log) ]
-                [ text "Log all!"
-                ]
-            ]
-        ]
+
+-- viewSetModal : (String -> Int -> Bool) -> String -> StrengthExercise -> Html Msg
+-- viewSetModal logged id exercise =
+--     div
+--         [ class "view-set-modal"
+--         , style "position" "fixed"
+--         , style "top" "0"
+--         , style "bottom" "0"
+--         , style "right" "0"
+--         , style "left" "0"
+--         , style "align-items" "center"
+--         , style "justify-content" "center"
+--         , style "background-color" "rgba(33, 43, 54, 0.4)"
+--         , onClick (Toggled id |> Select)
+--         ]
+--         [ div
+--             [ class "px-3"
+--             , style "border-style" "solid"
+--             , style "border-radius" "3px"
+--             , style "border-color" "white"
+--             , style "background-color" "white"
+--             , style "height" "70%"
+--             , style "width" "80%"
+--             , style "display" "flex"
+--             , style "flex-direction" "column"
+--             , style "align-items" "center"
+--             , style "overflow" "scroll"
+--             , overrideOnClickWith NoOp
+--             ]
+--             [ h2 [ style "text-align" "center" ]
+--                 [ text exercise.name
+--                 ]
+--             , div [] (List.indexedMap (viewSet logged id) exercise.sets)
+--             , button [ type_ "button", class "btn btn-outline-primary mt-auto mb-2", overrideOnClickWith (LogSets id exercise.sets |> Log) ]
+--                 [ text "Log all!"
+--                 ]
+--             ]
+--         ]

@@ -1,5 +1,6 @@
 module StrengthSet exposing (..)
 
+import Date exposing (Date)
 import Json.Decode as D
 import Json.Encode as E
 
@@ -16,6 +17,19 @@ type alias StrengthExercise =
     }
 
 
+type alias LoggedStrenghtSet =
+    { todo : StrengthSet
+    , logged : Maybe ( Date, StrengthSet )
+    }
+
+
+type alias LoggedStrengthExercise =
+    { name : String
+    , sets : List LoggedStrenghtSet
+    , isSubmitted : Bool
+    }
+
+
 emptySet : StrengthSet
 emptySet =
     { reps = 0, weight = 0.0 }
@@ -26,6 +40,45 @@ emptyExercise =
     { name = ""
     , sets = []
     }
+
+
+logSet : Date -> StrengthSet -> LoggedStrenghtSet -> LoggedStrenghtSet
+logSet onDate set lset =
+    { lset | logged = Just ( onDate, set ) }
+
+
+markAsLogged : StrengthSet -> LoggedStrenghtSet
+markAsLogged set =
+    { todo = set, logged = Nothing }
+
+
+asExercise : LoggedStrengthExercise -> StrengthExercise
+asExercise logged =
+    { name = logged.name
+    , sets = List.map (\loggedSet -> loggedSet.todo) logged.sets
+    }
+
+
+
+-- asLogged : LoggedStrengthExercise -> ( Date, List StrengthSet )
+-- asLogged logged = ( logged.)
+
+
+logSetInExercise : StrengthSet -> Date -> Int -> LoggedStrengthExercise -> LoggedStrengthExercise
+logSetInExercise set onDate setIndex exercise =
+    let
+        newSets =
+            List.indexedMap
+                (\index s ->
+                    if index == setIndex then
+                        logSet onDate set s
+
+                    else
+                        s
+                )
+                exercise.sets
+    in
+    { exercise | sets = newSets }
 
 
 changeRepCount : Int -> StrengthSet -> StrengthSet
