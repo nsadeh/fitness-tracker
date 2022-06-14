@@ -1,6 +1,6 @@
 module Api.Exercises exposing (API, DeleteExerciseRequest, InsertPayload, LogSetRequest, api)
 
-import Api.Supabase exposing (ApiKey, AuthenticatedRequest, AuthenticatedUser, RequestError(..), Url, formatError)
+import Api.Supabase exposing (ApiKey, AuthenticatedRequest, AuthenticatedUser, Url, formatError)
 import Date exposing (Date, Weekday, numberToWeekday, weekdayToNumber)
 import Http as H
 import Json.Decode as D
@@ -13,6 +13,7 @@ import Task
 import Time
 import Utils.OrderedDict exposing (OrderedDict, empty, filter, insert, map, remove, update)
 import Workout exposing (Workout)
+import Utils.Error exposing (RequestError)
 
 
 {-| Exercises API
