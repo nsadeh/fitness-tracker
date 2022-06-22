@@ -137,7 +137,7 @@ update msg model =
                         |> Tuple.mapFirst Authenticated
 
                 NoOp ->
-                    Debug.todo "branch 'NoOp' not implemented"
+                    log Info "Nothing todo" model
 
 
 loadWorkoutsData : WorkoutsPageState -> Maybe Navigation.Action -> ( WorkoutsPageState, Cmd Msg )

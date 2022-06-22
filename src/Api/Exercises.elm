@@ -10,7 +10,7 @@ import Json.Encode as E
 import Pages.Workouts.Utils exposing (padLists)
 import Platform exposing (Task)
 import Result as Result
-import StrengthSet exposing (LoggableStrengthSets(..), LoggedStrengthExercise, StrengthExercise, StrengthSet, decodeExercise, decodeSet, encodeExercise, encodeSet, markAsLogged)
+import StrengthSet exposing (LoggableStrengthSets(..), LoggedStrengthExercise, StrengthExercise, StrengthSet, decodeExercise, decodeSet, encodeExercise, encodeSet)
 import Task
 import Time
 import Utils.Error exposing (RequestError(..), responseResult)

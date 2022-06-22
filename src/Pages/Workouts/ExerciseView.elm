@@ -5,7 +5,7 @@ import Html exposing (Html, button, div, h2, input, span, text)
 import Html.Attributes exposing (checked, class, disabled, type_, value)
 import Html.Events exposing (onCheck, onClick, onInput)
 import Pages.Workouts.Utils exposing (getSetRanges)
-import StrengthSet exposing (LoggableStrengthSets(..), LoggedStrenghtSet, LoggedStrengthExercise, StrengthSet, numSets)
+import StrengthSet exposing (LoggableStrengthSets(..), LoggedStrengthExercise, StrengthSet, numSets)
 import Utils.OverrideClick exposing (overrideOnClickWith)
 
 

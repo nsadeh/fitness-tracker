@@ -1,7 +1,7 @@
 module Pages.Workouts.Utils exposing (..)
 
 import Date exposing (Date, Unit(..))
-import StrengthSet exposing (LoggedStrenghtSet, StrengthSet)
+import StrengthSet exposing (StrengthSet)
 
 
 getSetRanges : List StrengthSet -> ( String, String )

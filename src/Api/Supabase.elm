@@ -1,7 +1,5 @@
 module Api.Supabase exposing (..)
 
-import Http as H
-import Json.Decode as D
 import Task exposing (Task)
 import Utils.Error exposing (RequestError)
 

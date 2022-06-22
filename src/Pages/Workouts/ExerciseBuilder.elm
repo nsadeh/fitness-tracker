@@ -8,6 +8,7 @@ import Html.Events exposing (onClick, onInput)
 import Maybe
 import StrengthSet exposing (StrengthExercise, StrengthSet)
 import Time exposing (Month(..))
+import Utils.Log exposing (LogType(..), log)
 
 
 type alias WorkoutBuilder =
@@ -132,7 +133,7 @@ update { submit } msg model =
             ( { model | numSets = numSets }, Cmd.none )
 
         Invalid ->
-            Debug.todo "branch 'Invalid' not implemented"
+            log Error "Not implemented Builder.Invalid" model
 
 
 view : WorkoutBuilder -> Html Msg
