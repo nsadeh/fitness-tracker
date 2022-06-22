@@ -1,6 +1,5 @@
 module Main exposing (main)
 
-import Api.Supabase exposing (RequestError(..))
 import Api.User exposing (getUser)
 import Browser exposing (Document, UrlRequest(..))
 import Browser.Navigation exposing (Key)
@@ -9,13 +8,16 @@ import Html exposing (Html)
 import Json.Decode exposing (errorToString)
 import Json.Encode as E
 import Pages.Login as Login exposing (Msg(..))
-import Pages.Workouts as Workouts exposing (Model(..), Msg(..), SetupMessage(..))
+import Pages.Workouts.ExercisePageNavigation as Navigation
+import Pages.Workouts.WorkoutsPage as Workouts
 import Task
 import Time exposing (Month(..))
 import Url exposing (Url)
 import Url.Parser exposing ((</>), oneOf, query, s)
 import Url.Parser.Query
-import Utils.Log exposing (LogType(..), log, logCmd)
+import Utils.Error exposing (RequestError(..))
+import Utils.Log exposing (LogType(..), log)
+import Utils.Error as Error
 
 
 main : Program E.Value Model Msg
@@ -38,24 +40,24 @@ onUrlRequest : UrlRequest -> Msg
 onUrlRequest url =
     case url of
         Internal internal ->
-            Url.Parser.parse (routeParser Workouts.LoadedUrl) internal
-                |> Maybe.map Select
+            Url.Parser.parse (routeParser Navigation.LoadURL) internal
+                |> Maybe.map Workouts.Navigate
                 |> Maybe.map WorkoutsMessage
-                |> Maybe.withDefault (WorkoutsMessage NoOp)
+                |> Maybe.withDefault (WorkoutsMessage <| Workouts.Navigate <| Navigation.ImproperSelection "Could not properly parse date")
 
         External _ ->
-            WorkoutsMessage NoOp
+            WorkoutsMessage <| Workouts.Navigate <| Navigation.ImproperSelection "Unknown link"
 
 
 onUrlChange : Url -> Msg
 onUrlChange url =
-    Url.Parser.parse (routeParser (\date -> Workouts.Selected date)) url
-        |> Maybe.map Select
+    Url.Parser.parse (routeParser (\date -> Navigation.SelectDate date)) url
+        |> Maybe.map Workouts.Navigate
         |> Maybe.map WorkoutsMessage
-        |> Maybe.withDefault (WorkoutsMessage NoOp)
+        |> Maybe.withDefault (WorkoutsMessage <| Workouts.Navigate <| Navigation.ImproperSelection "Could not properly parse date")
 
 
-routeParser : (Date -> Workouts.SelectionMessage) -> Url.Parser.Parser (Workouts.SelectionMessage -> a) a
+routeParser : (Date -> Navigation.Action) -> Url.Parser.Parser (Navigation.Action -> a) a
 routeParser func =
     oneOf
         [ s "workout"
@@ -69,10 +71,10 @@ routeParser func =
                                 func date
 
                             Err errMsg ->
-                                Workouts.ImporoperSelection errMsg
+                                Navigation.ImproperSelection errMsg
                     )
                 )
-            |> Url.Parser.map (Maybe.withDefault (Workouts.ImporoperSelection "Not cool"))
+            |> Url.Parser.map (Maybe.withDefault (Navigation.ImproperSelection "Not cool"))
         ]
 
 
@@ -86,11 +88,10 @@ init flags route key =
         Ok user ->
             let
                 thenSelect =
-                    Url.Parser.parse (routeParser Workouts.Selected) route
+                    Url.Parser.parse (routeParser Navigation.SelectDate) route
             in
             ( WorkoutsPage Workouts.Unauthenticated
-            , Task.succeed (Workouts.LoggedIn user key thenSelect)
-                |> Task.map Setup
+            , Task.succeed (Workouts.FetchedUser key thenSelect (Ok user))
                 |> Task.perform WorkoutsMessage
             )
 
@@ -118,15 +119,16 @@ update msg model =
         ( LoginMessage loginMsg, LoginPage loginMdl ) ->
             case loginMsg of
                 LoginSucceeded user ->
-                    Workouts.update (LoggedIn user loginMdl.navKey Nothing |> Setup) Unauthenticated |> asMain WorkoutsPage WorkoutsMessage
+                    Workouts.update (Workouts.FetchedUser loginMdl.navKey Nothing (Ok user)) Workouts.Unauthenticated
+                        |> asMain WorkoutsPage WorkoutsMessage
 
                 _ ->
                     Login.update loginMsg loginMdl |> asMain LoginPage LoginMessage
 
         ( WorkoutsMessage workoutMsg, WorkoutsPage workoutPage ) ->
             case workoutMsg of
-                Setup (FailedRefresh err key) ->
-                    log Error ("Failed with error " ++ Workouts.parseError err) (LoginPage (Login.empty key))
+                Workouts.FetchedUser key _ (Err err) ->
+                    log Error ("Failed with error " ++ Error.toString err) (LoginPage (Login.empty key))
 
                 _ ->
                     Workouts.update workoutMsg workoutPage |> asMain WorkoutsPage WorkoutsMessage
@@ -154,12 +156,12 @@ viewDocument render model =
 
         WorkoutsPage page ->
             case page of
-                Unauthenticated ->
+                Workouts.Unauthenticated ->
                     { title = "Welcome to Fit.app"
                     , body = List.singleton (render model)
                     }
 
-                Authenticated data ->
+                Workouts.Authenticated data ->
                     { title = "Fit.app " ++ Date.format "EEEE, MMMM d" data.today
                     , body = List.singleton (render model)
                     }

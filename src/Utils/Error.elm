@@ -54,3 +54,13 @@ responseResult response =
 
         H.NetworkError_ ->
             H.NetworkError |> Http |> Err
+
+
+respond : (a -> msg) -> (RequestError -> msg) -> Result RequestError a -> msg
+respond good bad result =
+    case result of
+        Err err ->
+            bad err
+
+        Ok ok ->
+            good ok

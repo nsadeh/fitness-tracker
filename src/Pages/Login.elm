@@ -1,6 +1,6 @@
 module Pages.Login exposing (..)
 
-import Api.Supabase exposing (AuthenticatedUser, RequestError, key, url)
+import Api.Supabase exposing (AuthenticatedUser, key, url)
 import Api.User exposing (LoginInfo, api, setEmail, setPassword)
 import Browser.Navigation exposing (Key)
 import Html exposing (Html, button, div, input, p, text)
@@ -9,6 +9,7 @@ import Html.Events exposing (onClick, onInput)
 import Http
 import Task
 import Utils.Log exposing (LogType(..), log)
+import Utils.Error exposing (RequestError)
 
 
 type alias Model =

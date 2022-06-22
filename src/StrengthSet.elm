@@ -2,6 +2,7 @@ module StrengthSet exposing (..)
 
 import Array exposing (Array)
 import Date exposing (Date)
+import Html.Events exposing (on)
 import Json.Decode as D
 import Json.Encode as E
 
@@ -26,9 +27,14 @@ type alias LoggedStrenghtSet =
 
 type alias LoggedStrengthExercise =
     { name : String
-    , sets : Array LoggedStrenghtSet
-    , isSubmitted : Bool
+    , sets : LoggableStrengthSets
+    , loggedOn : Maybe Date
     }
+
+
+type LoggableStrengthSets
+    = Unlogged { todo : Array StrengthSet }
+    | Logged { loggedOn : Date, sets : Array { todo : StrengthSet, logged : StrengthSet } }
 
 
 emptySet : StrengthSet
@@ -56,30 +62,33 @@ markAsLogged set =
 asExercise : LoggedStrengthExercise -> StrengthExercise
 asExercise logged =
     { name = logged.name
-    , sets = Array.map (\loggedSet -> loggedSet.todo) logged.sets
+    , sets =
+        case logged.sets of
+            Unlogged { todo } ->
+                todo
+
+            Logged { sets } ->
+                Array.map (\set -> set.todo) sets
     }
 
 
 
 -- asLogged : LoggedStrengthExercise -> ( Date, List StrengthSet )
 -- asLogged logged = ( logged.)
-
-
-logSetInExercise : StrengthSet -> Date -> Int -> LoggedStrengthExercise -> LoggedStrengthExercise
-logSetInExercise set onDate setIndex exercise =
-    let
-        newSets =
-            Array.indexedMap
-                (\index s ->
-                    if index == setIndex then
-                        logSet onDate set s
-
-                    else
-                        s
-                )
-                exercise.sets
-    in
-    { exercise | sets = newSets }
+-- logSetInExercise : StrengthSet -> Date -> Int -> LoggedStrengthExercise -> LoggedStrengthExercise
+-- logSetInExercise set onDate setIndex exercise =
+--     let
+--         newSets =
+--             Array.indexedMap
+--                 (\index s ->
+--                     if index == setIndex then
+--                         logSet onDate set s
+--                     else
+--                         s
+--                 )
+--                 exercise.sets
+--     in
+--     { exercise | sets = newSets }
 
 
 changeRepCount : Int -> StrengthSet -> StrengthSet
@@ -179,3 +188,13 @@ removeSet index exercise =
             List.drop (index + 1) (Array.toList exercise.sets)
     in
     { exercise | sets = List.append before after |> Array.fromList }
+
+
+numSets : LoggableStrengthSets -> Int
+numSets s =
+    case s of
+        Unlogged { todo } ->
+            Array.length todo
+
+        Logged { sets } ->
+            Array.length sets

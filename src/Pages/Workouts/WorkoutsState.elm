@@ -4,15 +4,14 @@ import Api.Exercises as Exercises
 import Api.Supabase exposing (AuthenticatedUser, key, url)
 import Browser.Navigation as Nav
 import Date exposing (Date)
-import Pages.Workouts exposing (makeExerciseUrl)
+import Pages.Workouts.ExerciseBuilder exposing (WorkoutBuilder, emptyForm)
+import Pages.Workouts.ExerciseEditor exposing (WorkoutEditor(..))
 import Set exposing (Set)
-import StrengthSet exposing (LoggedStrengthExercise, StrengthExercise)
+import StrengthSet exposing (LoggedStrengthExercise)
 import Swiper
-import Task exposing (Task)
 import Time
 import Url.Builder
 import Utils.OrderedDict exposing (OrderedDict)
-import WorkoutCreator exposing (WorkoutCreator, emptyForm)
 
 
 type alias WorkoutsPageState =
@@ -21,8 +20,8 @@ type alias WorkoutsPageState =
     , navKey : Nav.Key
     , today : Date
     , navbarSwipeState : Swiper.SwipingState
-    , editor : Maybe ( String, StrengthExercise )
-    , creator : WorkoutCreator
+    , editor : WorkoutEditor
+    , creator : WorkoutBuilder
     , toggled : Set String
     , workout : OrderedDict String LoggedStrengthExercise
     }
@@ -39,7 +38,7 @@ emptyState user navKey =
     , user = user
     , workout = Utils.OrderedDict.empty
     , toggled = Set.empty
-    , editor = Nothing
+    , editor = Closed
     , creator = emptyForm
     , today = Date.fromCalendarDate 2022 Time.Jan 1
     , navKey = navKey
@@ -60,6 +59,16 @@ updateWorkout state workout =
 updateDate : WorkoutsPageState -> Date -> WorkoutsPageState
 updateDate state date =
     { state | today = date, workout = Utils.OrderedDict.empty }
+
+
+updateBuilder : WorkoutsPageState -> WorkoutBuilder -> WorkoutsPageState
+updateBuilder state builder =
+    { state | creator = builder }
+
+
+updateEditor : WorkoutsPageState -> WorkoutEditor -> WorkoutsPageState
+updateEditor state editor =
+    { state | editor = editor }
 
 
 isToggled : WorkoutsPageState -> String -> Bool
@@ -99,7 +108,7 @@ handleNavbarSwipe state event =
 
 changeWorkoutURL : WorkoutsPageState -> Date -> Cmd msg
 changeWorkoutURL state date =
-    Nav.pushUrl state.navKey <| makeExerciseUrl date
+    Nav.pushUrl state.navKey <| formatDateWorkoutURL date
 
 
 formatDateWorkoutURL : Date -> String

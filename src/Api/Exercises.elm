@@ -1,19 +1,21 @@
 module Api.Exercises exposing (API, DeleteExerciseRequest, InsertPayload, LogSetRequest, api)
 
-import Api.Supabase exposing (ApiKey, AuthenticatedRequest, AuthenticatedUser, Url, formatError)
+import Api.Supabase exposing (ApiKey, AuthenticatedRequest, AuthenticatedUser, Url)
+import Array
 import Date exposing (Date, Weekday, numberToWeekday, weekdayToNumber)
 import Http as H
 import Json.Decode as D
 import Json.Decode.Extra exposing (..)
 import Json.Encode as E
+import Pages.Workouts.Utils exposing (padLists)
 import Platform exposing (Task)
 import Result as Result
-import StrengthSet exposing (LoggedStrengthExercise, StrengthExercise, StrengthSet, decodeExercise, decodeSet, encodeExercise, encodeSet, logSetInExercise, markAsLogged)
+import StrengthSet exposing (LoggableStrengthSets(..), LoggedStrengthExercise, StrengthExercise, StrengthSet, decodeExercise, decodeSet, encodeExercise, encodeSet, markAsLogged)
 import Task
 import Time
+import Utils.Error exposing (RequestError(..), responseResult)
 import Utils.OrderedDict exposing (OrderedDict, empty, filter, insert, map, remove, update)
 import Workout exposing (Workout)
-import Utils.Error exposing (RequestError)
 
 
 {-| Exercises API
@@ -155,7 +157,7 @@ foldRow row workouts =
                     update row.exerciseId (Maybe.map (\( day, exercise ) -> ( day, { exercise | name = name } ))) workouts
 
                 ChangeSetsAndReps sets ->
-                    update row.exerciseId (Maybe.map (\( day, exercise ) -> ( day, { exercise | sets = sets } ))) workouts
+                    update row.exerciseId (Maybe.map (\( day, exercise ) -> ( day, { exercise | sets = Array.fromList sets } ))) workouts
 
 
 foldLoggedRow : JournalRow -> OrderedDict String ( Int, LoggedStrengthExercise ) -> OrderedDict String ( Int, LoggedStrengthExercise )
@@ -165,14 +167,15 @@ foldLoggedRow row workouts =
             let
                 exercise =
                     { name = insertRequest.exercise.name
-                    , sets = List.map (\set -> { todo = set, logged = Nothing }) insertRequest.exercise.sets
-                    , isSubmitted = False
+                    , sets = Unlogged { todo = insertRequest.exercise.sets }
+                    , loggedOn = Nothing
                     }
             in
             insert row.exerciseId ( weekdayToNumber insertRequest.day, exercise ) workouts
 
-        LogSet { loggedOn, set, number } ->
-            update row.exerciseId (Tuple.mapSecond (logSetInExercise set loggedOn number) |> Maybe.map) workouts
+        -- deprecated --
+        LogSet _ ->
+            workouts
 
         Delete _ ->
             remove row.exerciseId workouts
@@ -182,8 +185,37 @@ foldLoggedRow row workouts =
                 ChangeName name ->
                     update row.exerciseId (Tuple.mapSecond (\ex -> { ex | name = name }) |> Maybe.map) workouts
 
-                ChangeSetsAndReps sets ->
-                    update row.exerciseId (Maybe.map <| Tuple.mapSecond (\ex -> { ex | sets = List.map markAsLogged sets })) workouts
+                ChangeSetsAndReps newSets ->
+                    update row.exerciseId
+                        (Maybe.map <|
+                            Tuple.mapSecond
+                                (\ex ->
+                                    { ex
+                                        | sets =
+                                            case ex.sets of
+                                                Logged { loggedOn, sets } ->
+                                                    let
+                                                        ll =
+                                                            Array.map (\s -> s.logged) sets |> Array.toList
+
+                                                        ( todoList, loggedList ) =
+                                                            padLists newSets ll StrengthSet.emptySet StrengthSet.emptySet
+                                                    in
+                                                    Logged
+                                                        { loggedOn = loggedOn
+                                                        , sets =
+                                                            List.map2 (\todo logged -> { todo = todo, logged = logged })
+                                                                todoList
+                                                                loggedList
+                                                                |> Array.fromList
+                                                        }
+
+                                                Unlogged _ ->
+                                                    Unlogged { todo = newSets |> Array.fromList }
+                                    }
+                                )
+                        )
+                        workouts
 
 
 mapTaskResult : (r -> s) -> Task RequestError r -> Task RequestError s
@@ -197,7 +229,7 @@ mapTaskResult mapper task =
 
 resolveNothing : H.Response String -> Result RequestError ()
 resolveNothing response =
-    Result.map (\_ -> ()) (formatError response)
+    Result.map (\_ -> ()) (responseResult response)
 
 
 resolveRow : H.Response String -> Result RequestError (List JournalRow)
@@ -208,7 +240,7 @@ resolveRow response =
                 D.decodeString (D.list decodeRow) list
                     |> Result.mapError Parsing
     in
-    formatError response
+    responseResult response
         |> Result.andThen decodeJournalEntries
 
 

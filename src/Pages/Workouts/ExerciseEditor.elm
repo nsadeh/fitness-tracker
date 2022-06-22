@@ -14,6 +14,10 @@ type WorkoutEditor
     = Closed
     | Open { id : String, exercise : StrengthExercise, invalidBoxes : Dict Int { reps : Bool, weight : Bool } }
 
+isOpen: WorkoutEditor -> Bool
+isOpen editor = case editor of 
+    Closed -> False
+    Open _ -> True
 
 toggleRepsValidity : Dict Int { reps : Bool, weight : Bool } -> Int -> Bool -> Dict Int { reps : Bool, weight : Bool }
 toggleRepsValidity state index isValid =
@@ -48,7 +52,7 @@ type EditorMessage
 
 
 update :
-    { getExercise : String -> StrengthExercise
+    { getExercise : String -> Maybe StrengthExercise
     , editExercise : String -> StrengthExercise -> Cmd msg
     , deleteExercise : String -> Cmd msg
     }
@@ -60,7 +64,10 @@ update { getExercise, editExercise, deleteExercise } msg editor =
         Closed ->
             case msg of
                 Opened id ->
-                    ( Open { id = id, exercise = getExercise id, invalidBoxes = Dict.empty }, Cmd.none )
+                    case getExercise id of
+                        Just exercise ->  ( Open { id = id, exercise = exercise, invalidBoxes = Dict.empty }, Cmd.none )
+
+                        Nothing -> log Error (id ++ " does not exist in state") editor
 
                 _ ->
                     log Error "Can't close closed editor" editor

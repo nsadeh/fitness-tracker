@@ -1,17 +1,26 @@
 module Pages.Workouts.WorkoutsPage exposing (..)
 
-import Api.Supabase exposing (AuthenticatedUser)
-import Api.User exposing (storeUser)
+import Api.Supabase exposing (AuthenticatedUser, key, url)
+import Api.User as User exposing (storeUser)
+import Array
 import Browser.Navigation as Nav
-import Date exposing (Date)
-import Pages.Workouts.Utils exposing (nextDay, prevDay)
-import Pages.Workouts.WorkoutsState exposing (NavbarSwipeDirection(..), WorkoutsPageState, changeWorkoutURL, emptyState, handleNavbarSwipe, refreshUser, toggle, updateDate, updateWorkout)
-import StrengthSet exposing (LoggedStrengthExercise)
+import Date
+import Html exposing (Html, a, button, div, h2, input, text)
+import Html.Attributes exposing (checked, class, href, type_)
+import Html.Events exposing (onCheck, onClick)
+import Http as H
+import Pages.Workouts.ExerciseBuilder as Builder
+import Pages.Workouts.ExerciseEditor as Editor
+import Pages.Workouts.ExercisePageNavigation as Navigation
+import Pages.Workouts.ExerciseView exposing (viewExercise)
+import Pages.Workouts.Utils exposing (dateToString, nextDay, prevDay)
+import Pages.Workouts.WorkoutsState exposing (NavbarSwipeDirection(..), WorkoutsPageState, emptyState, formatDateWorkoutURL, isToggled, updateBuilder, updateEditor, updateWorkout)
+import StrengthSet exposing (LoggedStrengthExercise, asExercise)
 import Swiper
 import Task
-import Utils.Error as Error exposing (RequestError)
-import Utils.Log exposing (LogType(..), log, logCmd)
-import Utils.OrderedDict exposing (OrderedDict)
+import Utils.Error as Error exposing (RequestError(..))
+import Utils.Log exposing (LogType(..), log)
+import Utils.OrderedDict as OrderedDict exposing (OrderedDict)
 
 
 type Model
@@ -20,121 +29,206 @@ type Model
 
 
 type Msg
-    = PageSetup SetupMessage
-    | LoadData PageSelectionMessage
+    = Editor Editor.EditorMessage
+    | FetchedWorkout (Result RequestError (OrderedDict String LoggedStrengthExercise))
+    | Builder Builder.Msg
+    | FetchedUser Nav.Key (Maybe Navigation.Action) (Result RequestError AuthenticatedUser)
+    | Navigate Navigation.Action
+    | NoOp
 
 
-
--- Setup page
-
-
-type SetupMessage
-    = LoggedIn AuthenticatedUser Nav.Key (Maybe PageSelectionMessage)
-    | FetchedWorkout (OrderedDict String LoggedStrengthExercise)
-    | FetchError RequestError
-    | FailedRefresh RequestError Nav.Key
-
-
-handleSetup : SetupMessage -> Model -> ( Model, Cmd Msg )
-handleSetup msg model =
+update : Msg -> Model -> ( Model, Cmd Msg )
+update msg model =
     case model of
         Unauthenticated ->
             case msg of
-                LoggedIn user navKey thenLoad ->
-                    let
-                        model =
-                            Authenticated (emptyState user navKey)
+                FetchedUser navKey nextAction result ->
+                    case result of
+                        Err err ->
+                            log Error ("Error fetching user: \n" ++ Error.toString err) model
 
-                        ( loaded, next ) =
-                            loadWorkoutsData thenLoad model
-                    in
-                    ( loaded, Cmd.batch [ next, storeUser user ] )
+                        Ok user ->
+                            let
+                                ( page, action ) =
+                                    loadWorkoutsData (emptyState user navKey) nextAction
+                            in
+                            ( Authenticated page, Cmd.batch [ action, storeUser user ] )
 
                 _ ->
-                    log Error "Must be logged in to setup workouts page" model
+                    log Error "Must be logged in to do anything" model
 
-        Authenticated state ->
+        Authenticated page ->
             case msg of
-                LoggedIn user _ _ ->
-                    ( refreshUser state user |> Authenticated, Cmd.batch [ logCmd Info "refreshed user", storeUser user ] )
+                Editor edit ->
+                    let
+                        getExercise =
+                            \id -> OrderedDict.get id page.workout |> Maybe.map asExercise
 
-                FetchedWorkout workout ->
-                    ( Authenticated (updateWorkout state workout), Cmd.none )
+                        editExercise =
+                            \id exercise ->
+                                Task.sequence [ page.api.editName id exercise.name, page.api.editSets id (Array.toList exercise.sets) ]
+                                    |> Task.attempt (Error.respond (\_ -> Editor.ClosedEditor) (\_ -> Editor.DoNothing))
 
-                FetchError error ->
-                    log Error ("Fetch Error: " ++ Error.toString error) model
+                        deleteExercise =
+                            \id ->
+                                page.api.deleteExercise id page.today
+                                    |> Task.attempt (Error.respond (\_ -> Editor.ClosedEditor) (\_ -> Editor.DoNothing))
 
-                FailedRefresh err _ ->
-                    log Error ("Refresh Error: " ++ Error.toString err) model
+                        ( edits, nextEdits ) =
+                            Editor.update
+                                { getExercise = getExercise
+                                , editExercise = editExercise
+                                , deleteExercise = deleteExercise
+                                }
+                                edit
+                                page.editor
+                    in
+                    ( Authenticated <| updateEditor page edits, Cmd.map Editor nextEdits )
+
+                FetchedWorkout result ->
+                    case result of
+                        Err error ->
+                            case error of
+                                Http (H.BadStatus 401) ->
+                                    let
+                                        user =
+                                            User.api url key
+                                    in
+                                    ( Unauthenticated
+                                    , user.refreshAuth page.user.refreshToken
+                                        |> Task.attempt (FetchedUser page.navKey (Just <| Navigation.LoadURL page.today))
+                                    )
+
+                                _ ->
+                                    log Error ("Encountered error fetching workout: \n" ++ Error.toString error) model
+
+                        Ok workout ->
+                            ( Authenticated <| updateWorkout page workout, Cmd.none )
+
+                Builder build ->
+                    let
+                        createNew =
+                            \exercise ->
+                                page.api.insert
+                                    { exercise = exercise
+                                    , order = List.length <| OrderedDict.keys page.workout
+                                    , day = Date.weekday page.today
+                                    }
+                                    |> Task.attempt (Error.respond (\_ -> Builder.Cleared) (\_ -> Builder.Invalid))
+                    in
+                    Builder.update { submit = createNew } build page.creator
+                        |> Tuple.mapBoth (updateBuilder page) (Cmd.map Builder)
+                        |> Tuple.mapFirst Authenticated
+
+                FetchedUser navKey navAction result ->
+                    case result of
+                        Err error ->
+                            log Error ("Fetch Error: " ++ Error.toString error) Unauthenticated
+
+                        Ok user ->
+                            let
+                                ( updatedState, nextAction ) =
+                                    loadWorkoutsData (emptyState user navKey) navAction
+                            in
+                            ( Authenticated updatedState, Cmd.batch [ nextAction, storeUser user ] )
+
+                Navigate directive ->
+                    loadWorkoutsData page (Just directive)
+                        |> Tuple.mapFirst Authenticated
+
+                NoOp ->
+                    Debug.todo "branch 'NoOp' not implemented"
 
 
-loadWorkoutsData : Maybe PageSelectionMessage -> Model -> ( Model, Cmd Msg )
-loadWorkoutsData loadMsg model =
-    case loadMsg of
-        Just msg ->
-            handleSelection msg model
+loadWorkoutsData : WorkoutsPageState -> Maybe Navigation.Action -> ( WorkoutsPageState, Cmd Msg )
+loadWorkoutsData state directive =
+    case directive of
+        Just action ->
+            Navigation.navigatePage { parseWorkout = FetchedWorkout } action state
 
         Nothing ->
-            ( model, Task.perform (\date -> LoadedUrl date |> LoadData) Date.today )
+            ( state, Task.perform (\date -> Navigation.LoadURL date |> Navigate) Date.today )
 
 
-
--- Select elements on page --
-
-
-type PageSelectionMessage
-    = Toggled String
-    | Selected Date
-    | LoadedUrl Date
-    | Swiped Swiper.SwipeEvent
-    | ImporoperSelection String
+openWorkoutEditor : String -> Msg
+openWorkoutEditor id =
+    Editor.Opened id |> Editor
 
 
-handleSelection : PageSelectionMessage -> Model -> ( Model, Cmd Msg )
-handleSelection msg model =
+expand : String -> Msg
+expand id =
+    Navigation.ExpandExercise id |> Navigate
+
+
+inputWeight : String -> String -> Msg
+inputWeight _ _ =
+    NoOp
+
+
+inputReps : String -> String -> Msg
+inputReps _ _ =
+    NoOp
+
+
+view : Model -> Html Msg
+view model =
     case model of
         Unauthenticated ->
-            log Error "Unauthenticated user" model
+            div [] []
 
         Authenticated state ->
-            case msg of
-                Toggled exerciseID ->
-                    ( Authenticated (toggle state exerciseID), Cmd.none )
+            let
+                exercisesState =
+                    { expanded = isToggled state, isLogged = \_ -> False }
 
-                Selected date ->
-                    ( Authenticated <| updateDate state date, Task.attempt parseWorkout <| state.api.getLoggedWorkouts date )
+                api =
+                    { onOpenWorkoutEditor = openWorkoutEditor
+                    , onToggle = expand
+                    , onWeightInput = inputWeight
+                    , onRepsInput = inputReps
+                    }
 
-                LoadedUrl date ->
-                    ( model, changeWorkoutURL state date )
+                exercises =
+                    state.workout
+                        |> OrderedDict.map (viewExercise exercisesState api)
+                        |> OrderedDict.values
+            in
+            div [ class "flex justify-center w-full bg-gray-900 sm:px-3" ]
+                [ Editor.view state.editor |> Html.map Editor
+                , div [ class "w-screen text-blue-200" ]
+                    [ div []
+                        [ div (class "flex flex-row sm:justify-between justify-center border-b-2 border-blue-400 mb-3 p-2 pb-2" :: Swiper.onSwipeEvents (\e -> Navigation.SwipedNavbar e |> Navigate))
+                            [ a [ class "hidden sm:block my-auto hover:text-blue-400", href (prevDay state.today |> Pages.Workouts.WorkoutsState.formatDateWorkoutURL) ] [ text "< yesterday" ]
+                            , h2 [ class "text-4xl text-center" ]
+                                [ text (dateToString state.today) ]
+                            , a [ class "hidden sm:block my-auto hover:text-blue-400", href (nextDay state.today |> formatDateWorkoutURL) ] [ text "tomorrow >" ]
+                            ]
+                        , div [ class "overflow-y-scroll sm:mx-0 mx-1" ] exercises
+                        , input [ type_ "checkbox", class "opacity-0 h-0 absolute", onCheck (\_ -> Builder.Opened), checked state.creator.isOpen ] [] |> Html.map Builder
+                        , div
+                            [ class
+                                (if state.creator.isOpen then
+                                    "visible"
 
-                Swiped event ->
-                    let
-                        ( swipedState, swipeDirection ) =
-                            handleNavbarSwipe state event
-                    in
-                    case swipeDirection of
-                        Nothing ->
-                            ( Authenticated swipedState, Cmd.none )
-
-                        Just direction ->
-                            handleSelection
-                                (case direction of
-                                    Left ->
-                                        LoadedUrl <| prevDay swipedState.today
-
-                                    Right ->
-                                        LoadedUrl <| nextDay swipedState.today
+                                 else
+                                    "hidden"
                                 )
-                                (Authenticated swipedState)
+                            ]
+                            [ Builder.view state.creator ]
+                            |> Html.map Builder
+                        , div [ class "flex justify-center" ]
+                            [ button
+                                [ class "border-2 border-blue-400 w-24 rounded-md m-2 p-2 hover:bg-blue-400 w-11/12"
+                                , onClick Builder.Opened
+                                ]
+                                [ if state.creator.isOpen then
+                                    text "-"
 
-                ImporoperSelection err ->
-                    log Error err model
-
-parseWorkout : Result RequestError (OrderedDict String LoggedStrengthExercise) -> Msg
-parseWorkout result =
-    case result of
-        Ok workout ->
-            FetchedWorkout workout |> PageSetup
-
-        Err err ->
-            FetchError err |> PageSetup
+                                  else
+                                    text "+"
+                                ]
+                            ]
+                            |> Html.map Builder
+                        ]
+                    ]
+                ]

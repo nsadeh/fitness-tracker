@@ -1,32 +1,56 @@
 module Pages.Workouts.ExerciseView exposing (viewExercise)
 
-import Array exposing (Array)
+import Array
 import Html exposing (Html, button, div, h2, input, span, text)
 import Html.Attributes exposing (checked, class, disabled, type_, value)
 import Html.Events exposing (onCheck, onClick, onInput)
 import Pages.Workouts.Utils exposing (getSetRanges)
-import StrengthSet exposing (LoggedStrenghtSet, LoggedStrengthExercise)
+import StrengthSet exposing (LoggableStrengthSets(..), LoggedStrenghtSet, LoggedStrengthExercise, StrengthSet, numSets)
 import Utils.OverrideClick exposing (overrideOnClickWith)
 
 
-viewExercise : { expanded : Bool, isLogged : Bool } -> { onOpenWorkoutEditor : String -> msg, onToggle : Bool -> msg, onWeightInput : String -> msg, onRepsInput : String -> msg, onLogAction : msg } -> String -> LoggedStrengthExercise -> Html msg
-viewExercise { expanded, isLogged } { onOpenWorkoutEditor, onToggle, onWeightInput, onRepsInput, onLogAction } id exercise =
+viewExercise :
+    { expanded : String -> Bool
+    , isLogged : String -> Bool
+    }
+    ->
+        { onOpenWorkoutEditor : String -> msg
+        , onToggle : String -> msg
+        , onWeightInput : String -> String -> msg
+        , onRepsInput : String -> String -> msg
+
+        -- , onLogAction : msg
+        }
+    -> String
+    -> LoggedStrengthExercise
+    -> Html msg
+viewExercise { expanded, isLogged } { onOpenWorkoutEditor, onToggle, onWeightInput, onRepsInput } id exercise =
     let
         ( weights, reps ) =
-            Array.toList exercise.sets |> List.map (\ls -> ls.todo) |> getSetRanges
+            exercise.sets
+                |> (\s ->
+                        case s of
+                            Unlogged { todo } ->
+                                todo
+
+                            Logged { sets } ->
+                                Array.map (\set -> set.todo) sets
+                   )
+                |> Array.toList
+                |> getSetRanges
     in
     div [ class "border rounded-md border-blue-400 mb-3 drop-shadow-2xl h-fit" ]
         [ div
             [ class
                 ("cursor-pointer flex flex-row justify-between py-2 px-2"
-                    ++ (if expanded then
+                    ++ (if expanded id then
                             " border-b border-blue-400"
 
                         else
                             ""
                        )
                 )
-            , onClick onToggle
+            , onClick (onToggle id)
             ]
             [ div [ class "flex my-auto" ]
                 [ div [ class "w-56 text-xl content-center" ]
@@ -36,7 +60,7 @@ viewExercise { expanded, isLogged } { onOpenWorkoutEditor, onToggle, onWeightInp
             , div [ class "flex flex-row w-48 justify-between my-auto" ]
                 [ div []
                     [ span [ class "text-xl" ]
-                        [ text (String.fromInt (List.length exercise.sets))
+                        [ text (String.fromInt (numSets exercise.sets))
                         ]
                     , span [ class "text-xs" ]
                         [ text "sets"
@@ -59,7 +83,11 @@ viewExercise { expanded, isLogged } { onOpenWorkoutEditor, onToggle, onWeightInp
                 ]
             , div []
                 [ div [ class "flex flex-row" ]
-                    [ button [ type_ "button", class "border-2 border-red-400 w-24 rounded-md m-2 p-2 hover:bg-red-400 sm:block hidden", overrideOnClickWith onOpenWorkoutEditor ]
+                    [ button
+                        [ type_ "button"
+                        , class "border-2 border-red-400 w-24 rounded-md m-2 p-2 hover:bg-red-400 sm:block hidden"
+                        , overrideOnClickWith (onOpenWorkoutEditor id)
+                        ]
                         [ text "Edit"
                         ]
 
@@ -69,22 +97,48 @@ viewExercise { expanded, isLogged } { onOpenWorkoutEditor, onToggle, onWeightInp
                     ]
                 ]
             ]
-        , input [ type_ "checkbox", class "opacity-0 h-0 absolute", checked expanded, onCheck onToggle ] []
+        , input
+            [ type_ "checkbox"
+            , class "opacity-0 h-0 absolute"
+            , checked (expanded id)
+            , onCheck (\_ -> onToggle id)
+            ]
+            []
         , div
             [ class
-                (if expanded then
+                (if expanded id then
                     "transition-all ease-in-out duration-700 clear-both"
 
                  else
                     "hidden overflow-hidden transition-all ease-in-out duration-700 clear-both"
                 )
             ]
-            (List.indexedMap (viewSet ({ isLogged = isLogged } { onWeightInput = onWeightInput, onRepsInput = onRepsInput, onLogAction = onLogAction })) exercise.sets)
+            (Array.indexedMap
+                (viewSet
+                    { isLogged = isLogged id }
+                    { onWeightInput = onWeightInput id
+                    , onRepsInput = onRepsInput id
+                    }
+                )
+                (case exercise.sets of
+                    Unlogged { todo } ->
+                        Array.map (\set -> ( set, Nothing )) todo
+
+                    Logged { sets } ->
+                        Array.map (\set -> ( set.todo, Just set.logged )) sets
+                )
+                |> Array.toList
+            )
         ]
 
 
-viewSet : { isLogged : Bool } -> { onWeightInput : String -> msg, onRepsInput : String -> msg, onLogAction : msg } -> Int -> LoggedStrenghtSet -> Html msg
-viewSet { isLogged } { onWeightInput, onRepsInput, onLogAction } setNumber set =
+viewSet :
+    { isLogged : Bool }
+    -> { onWeightInput : String -> msg, onRepsInput : String -> msg }
+    -> Int
+    -> ( StrengthSet, Maybe StrengthSet )
+    -> Html msg
+viewSet { isLogged } { onWeightInput, onRepsInput } setNumber ( todo, logged ) =
     div [ class "flex flex-row border-b border-blue-400 justify-between py-auto px-1 sm:px-2 py-1" ]
         [ div [ class "d-flex justify-center my-auto mr-3 sm:block hidden" ]
             [ h2 [ class "text-xl" ]
@@ -95,7 +149,7 @@ viewSet { isLogged } { onWeightInput, onRepsInput, onLogAction } setNumber set =
             [ div [ class "flex flex-row justify-between sm:mr-10 mr-5" ]
                 [ div [ class "flex flex-col justify-center" ]
                     [ div [ class "hidden text-lg pb-1" ]
-                        [ text (String.fromFloat set.todo.weight)
+                        [ text (String.fromFloat todo.weight)
                         , span [ class "text-xs" ] [ text "lbs" ]
                         ]
 
@@ -106,7 +160,7 @@ viewSet { isLogged } { onWeightInput, onRepsInput, onLogAction } setNumber set =
                     , input
                         [ type_ "number"
                         , class "align-middle w-16 border rounded-md bg-blue-100 text-black"
-                        , value (String.fromFloat set.todo.weight)
+                        , value (String.fromFloat todo.weight)
                         , disabled isLogged
                         , onInput onWeightInput
                         ]
@@ -116,7 +170,7 @@ viewSet { isLogged } { onWeightInput, onRepsInput, onLogAction } setNumber set =
             , div [ class "flex flex-row justify-between mr-1" ]
                 [ div [ class "flex flex-col justify-center" ]
                     [ div [ class "hidden text-xl pb-1" ]
-                        [ text (String.fromInt set.todo.reps)
+                        [ text (String.fromInt todo.reps)
                         , span [ class "text-xs" ]
                             [ text "reps"
                             ]
@@ -129,7 +183,7 @@ viewSet { isLogged } { onWeightInput, onRepsInput, onLogAction } setNumber set =
                     , input
                         [ type_ "number"
                         , class "align-middle w-16 border rounded-md bg-blue-100 text-black"
-                        , value (String.fromInt set.todo.reps)
+                        , value (String.fromInt todo.reps)
                         , disabled isLogged
                         , onInput onRepsInput
                         ]
@@ -141,7 +195,8 @@ viewSet { isLogged } { onWeightInput, onRepsInput, onLogAction } setNumber set =
             [ button
                 [ type_ "button"
                 , class "border-2 border-blue-400 sm:w-24 w-20 rounded-md sm:m-2 my-2 ml-1 sm:p-2 p-1 hover:bg-blue-400"
-                , overrideOnClickWith onLogAction
+
+                -- , overrideOnClickWith onLogAction
                 ]
                 []
             ]

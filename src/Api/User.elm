@@ -1,10 +1,12 @@
-port module Api.User exposing (API, LoginInfo, api, getUser, setEmail, setPassword, storeUser, empty)
+port module Api.User exposing (API, LoginInfo, api, empty, getUser, setEmail, setPassword, storeUser)
 
-import Api.Supabase exposing (AuthenticatedUser, RequestError(..), UnauthenticatedRequest, formatError)
+import Api.Supabase exposing (AuthenticatedUser, UnauthenticatedRequest)
 import Http as H
 import Json.Decode as D
 import Json.Encode as E
 import Platform exposing (Task)
+import Utils.Error exposing (RequestError(..))
+import Utils.Error exposing (responseResult)
 
 
 
@@ -98,7 +100,7 @@ userResolver response =
                 D.decodeString decodeUser user
                     |> Result.mapError Parsing
     in
-    formatError response
+    responseResult response
         |> Result.andThen decode
 
 

@@ -1,18 +1,17 @@
 module Pages.Workouts.Utils exposing (..)
 
-import StrengthSet exposing (LoggedStrenghtSet)
-import Date exposing (Date)
-import Date exposing (Unit(..))
+import Date exposing (Date, Unit(..))
+import StrengthSet exposing (LoggedStrenghtSet, StrengthSet)
 
 
-getSetRanges : List LoggedStrenghtSet -> ( String, String )
+getSetRanges : List StrengthSet -> ( String, String )
 getSetRanges sets =
     let
         repsOnly =
-            List.map (\set -> set.todo.reps) sets
+            List.map (\set -> set.reps) sets
 
         weightsOnly =
-            List.map (\set -> set.todo.weight) sets
+            List.map (\set -> set.weight) sets
 
         minReps =
             List.minimum repsOnly |> Maybe.withDefault 0
@@ -56,3 +55,25 @@ nextDay date =
 dateToString : Date -> String
 dateToString date =
     Date.format "EEE, MMMM d" date
+
+
+padLists : List a -> List b -> a -> b -> ( List a, List b )
+padLists la lb a b =
+    let
+        paddedLa =
+            if List.length la < List.length lb then
+                List.repeat (List.length lb - List.length la) a
+                    |> List.append la
+
+            else
+                la
+
+        paddedLb =
+            if List.length la > List.length lb then
+                List.repeat (List.length la - List.length lb) b
+                    |> List.append lb
+
+            else
+                lb
+    in
+    ( paddedLa, paddedLb )
