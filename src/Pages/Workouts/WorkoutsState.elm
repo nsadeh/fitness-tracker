@@ -4,8 +4,10 @@ import Api.Exercises as Exercises
 import Api.Supabase exposing (AuthenticatedUser, key, url)
 import Browser.Navigation as Nav
 import Date exposing (Date)
+import Dict
 import Pages.Workouts.ExerciseBuilder exposing (WorkoutBuilder, emptyForm)
 import Pages.Workouts.ExerciseEditor exposing (WorkoutEditor(..))
+import Pages.Workouts.WorkoutLogger as WorkoutLogger
 import Set exposing (Set)
 import StrengthSet exposing (LoggedStrengthExercise)
 import Swiper
@@ -24,6 +26,7 @@ type alias WorkoutsPageState =
     , creator : WorkoutBuilder
     , toggled : Set String
     , workout : OrderedDict String LoggedStrengthExercise
+    , log : WorkoutLogger.Model
     }
 
 
@@ -43,6 +46,7 @@ emptyState user navKey =
     , today = Date.fromCalendarDate 2022 Time.Jan 1
     , navKey = navKey
     , navbarSwipeState = Swiper.initialSwipingState
+    , log = Dict.empty
     }
 
 
@@ -53,7 +57,7 @@ refreshUser state user =
 
 updateWorkout : WorkoutsPageState -> OrderedDict String LoggedStrengthExercise -> WorkoutsPageState
 updateWorkout state workout =
-    { state | workout = workout }
+    { state | workout = workout, log = WorkoutLogger.init state.today workout }
 
 
 updateDate : WorkoutsPageState -> Date -> WorkoutsPageState
@@ -69,6 +73,11 @@ updateBuilder state builder =
 updateEditor : WorkoutsPageState -> WorkoutEditor -> WorkoutsPageState
 updateEditor state editor =
     { state | editor = editor }
+
+
+updateLog : WorkoutsPageState -> WorkoutLogger.Model -> WorkoutsPageState
+updateLog state log =
+    { state | log = log }
 
 
 isToggled : WorkoutsPageState -> String -> Bool

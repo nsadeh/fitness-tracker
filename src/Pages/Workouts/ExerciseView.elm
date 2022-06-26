@@ -5,6 +5,7 @@ import Html exposing (Html, button, div, h2, input, span, text)
 import Html.Attributes exposing (checked, class, disabled, type_, value)
 import Html.Events exposing (onCheck, onClick, onInput)
 import Pages.Workouts.Utils exposing (getSetRanges)
+import Pages.Workouts.WorkoutLogger exposing (Msg(..))
 import StrengthSet exposing (LoggableStrengthSets(..), LoggedStrengthExercise, StrengthSet, numSets)
 import Utils.OverrideClick exposing (overrideOnClickWith)
 
@@ -16,8 +17,8 @@ viewExercise :
     ->
         { onOpenWorkoutEditor : String -> msg
         , onToggle : String -> msg
-        , onWeightInput : String -> String -> msg
-        , onRepsInput : String -> String -> msg
+        , onWeightInput : String -> Int -> String -> msg
+        , onRepsInput : String -> Int -> String -> msg
 
         -- , onLogAction : msg
         }
@@ -116,9 +117,7 @@ viewExercise { expanded, isLogged } { onOpenWorkoutEditor, onToggle, onWeightInp
             (Array.indexedMap
                 (viewSet
                     { isLogged = isLogged id }
-                    { onWeightInput = onWeightInput id
-                    , onRepsInput = onRepsInput id
-                    }
+                    { onRepsInput = onRepsInput id, onWeightInput = onWeightInput id}
                 )
                 (case exercise.sets of
                     Unlogged { todo } ->
@@ -134,7 +133,10 @@ viewExercise { expanded, isLogged } { onOpenWorkoutEditor, onToggle, onWeightInp
 
 viewSet :
     { isLogged : Bool }
-    -> { onWeightInput : String -> msg, onRepsInput : String -> msg }
+    ->
+        { onWeightInput : Int -> String -> msg
+        , onRepsInput : Int -> String -> msg
+        }
     -> Int
     -> ( StrengthSet, Maybe StrengthSet )
     -> Html msg
@@ -162,7 +164,7 @@ viewSet { isLogged } { onWeightInput, onRepsInput } setNumber ( todo, logged ) =
                         , class "align-middle w-16 border rounded-md bg-blue-100 text-black"
                         , value (String.fromFloat todo.weight)
                         , disabled isLogged
-                        , onInput onWeightInput
+                        , onInput (onWeightInput setNumber)
                         ]
                         []
                     ]
@@ -175,8 +177,7 @@ viewSet { isLogged } { onWeightInput, onRepsInput } setNumber ( todo, logged ) =
                             [ text "reps"
                             ]
                         ]
-
-                    -- , viewLastWeek False set.logged
+                    , viewLastLogged logged
                     ]
                 , div [ class "ml-3 my-auto flex flex-col" ]
                     [ div [ class "text-xs align-top" ] [ text "today(rps):" ]
@@ -185,7 +186,7 @@ viewSet { isLogged } { onWeightInput, onRepsInput } setNumber ( todo, logged ) =
                         , class "align-middle w-16 border rounded-md bg-blue-100 text-black"
                         , value (String.fromInt todo.reps)
                         , disabled isLogged
-                        , onInput onRepsInput
+                        , onInput (onRepsInput setNumber)
                         ]
                         []
                     ]
@@ -201,3 +202,13 @@ viewSet { isLogged } { onWeightInput, onRepsInput } setNumber ( todo, logged ) =
                 []
             ]
         ]
+
+
+viewLastLogged : Maybe StrengthSet -> Html msg
+viewLastLogged maybeSet =
+    case maybeSet of
+        Nothing ->
+            div [] []
+
+        Just _ ->
+            div [] []

@@ -14,7 +14,8 @@ import Pages.Workouts.ExerciseEditor as Editor
 import Pages.Workouts.ExercisePageNavigation as Navigation
 import Pages.Workouts.ExerciseView exposing (viewExercise)
 import Pages.Workouts.Utils exposing (dateToString, nextDay, prevDay)
-import Pages.Workouts.WorkoutsState exposing (NavbarSwipeDirection(..), WorkoutsPageState, emptyState, formatDateWorkoutURL, isToggled, updateBuilder, updateEditor, updateWorkout)
+import Pages.Workouts.WorkoutLogger as WorkoutLogger exposing (Msg(..))
+import Pages.Workouts.WorkoutsState exposing (NavbarSwipeDirection(..), WorkoutsPageState, emptyState, formatDateWorkoutURL, isToggled, updateBuilder, updateEditor, updateLog, updateWorkout)
 import StrengthSet exposing (LoggedStrengthExercise, asExercise)
 import Swiper
 import Task
@@ -32,6 +33,7 @@ type Msg
     = Editor Editor.EditorMessage
     | FetchedWorkout (Result RequestError (OrderedDict String LoggedStrengthExercise))
     | Builder Builder.Msg
+    | LogWorkout WorkoutLogger.Msg
     | FetchedUser Nav.Key (Maybe Navigation.Action) (Result RequestError AuthenticatedUser)
     | Navigate Navigation.Action
     | NoOp
@@ -136,6 +138,11 @@ update msg model =
                     loadWorkoutsData page (Just directive)
                         |> Tuple.mapFirst Authenticated
 
+                LogWorkout logMsg ->
+                    WorkoutLogger.update logMsg page.log
+                        |> Tuple.mapFirst (updateLog page)
+                        |> Tuple.mapFirst Authenticated
+
                 NoOp ->
                     log Info "Nothing todo" model
 
@@ -160,14 +167,14 @@ expand id =
     Navigation.ExpandExercise id |> Navigate
 
 
-inputWeight : String -> String -> Msg
-inputWeight _ _ =
-    NoOp
+inputWeight : String -> Int -> String -> Msg
+inputWeight id setNumber weightString =
+    WeightRecorded id setNumber weightString |> LogWorkout
 
 
-inputReps : String -> String -> Msg
-inputReps _ _ =
-    NoOp
+inputReps : String -> Int -> String -> Msg
+inputReps id setNumber repsString =
+    RepsRecorded id setNumber repsString |> LogWorkout
 
 
 view : Model -> Html Msg
@@ -193,7 +200,7 @@ view model =
                         |> OrderedDict.map (viewExercise exercisesState api)
                         |> OrderedDict.values
             in
-            div [ class "flex justify-center w-full bg-gray-900 sm:px-3" ]
+            div [ class "flex min-h-screen justify-center w-full bg-gray-900 sm:px-3 " ]
                 [ Editor.view state.editor |> Html.map Editor
                 , div [ class "w-screen text-blue-200" ]
                     [ div []

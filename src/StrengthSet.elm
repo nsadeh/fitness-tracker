@@ -2,7 +2,6 @@ module StrengthSet exposing (..)
 
 import Array exposing (Array)
 import Date exposing (Date)
-import Html.Events exposing (on)
 import Json.Decode as D
 import Json.Encode as E
 
@@ -70,25 +69,6 @@ asExercise logged =
             Logged { sets } ->
                 Array.map (\set -> set.todo) sets
     }
-
-
-
--- asLogged : LoggedStrengthExercise -> ( Date, List StrengthSet )
--- asLogged logged = ( logged.)
--- logSetInExercise : StrengthSet -> Date -> Int -> LoggedStrengthExercise -> LoggedStrengthExercise
--- logSetInExercise set onDate setIndex exercise =
---     let
---         newSets =
---             Array.indexedMap
---                 (\index s ->
---                     if index == setIndex then
---                         logSet onDate set s
---                     else
---                         s
---                 )
---                 exercise.sets
---     in
---     { exercise | sets = newSets }
 
 
 changeRepCount : Int -> StrengthSet -> StrengthSet
