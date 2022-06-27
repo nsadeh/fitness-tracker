@@ -16,6 +16,9 @@ import Time
 import Utils.Error exposing (RequestError(..), responseResult)
 import Utils.OrderedDict exposing (OrderedDict, empty, filter, insert, map, remove, update)
 import Workout exposing (Workout)
+import StrengthSet exposing (logSetsInExercise)
+import Utils.Log exposing (log)
+import Utils.Log exposing (LogType(..))
 
 
 {-| Exercises API
@@ -28,10 +31,10 @@ type alias ExerciseId =
 
 
 type alias API =
-    { getWorkout : Date -> Task RequestError Workout
-    , getLoggedWorkouts : Date -> Task RequestError (OrderedDict String LoggedStrengthExercise)
+    { getLoggedWorkouts : Date -> Task RequestError (OrderedDict String LoggedStrengthExercise)
     , insert : InsertPayload -> Task RequestError ()
     , logSet : ExerciseId -> Date -> Int -> StrengthSet -> Task RequestError ()
+    , logExercise : ExerciseId -> Date -> List StrengthSet -> Task RequestError ()
     , deleteExercise : ExerciseId -> Date -> Task RequestError ()
     , editSets : ExerciseId -> List StrengthSet -> Task RequestError ()
     , editName : ExerciseId -> String -> Task RequestError ()
@@ -40,13 +43,13 @@ type alias API =
 
 api : Url -> ApiKey -> AuthenticatedUser -> API
 api url key user =
-    { getWorkout = getExercises url key user
-    , getLoggedWorkouts = getToday foldLoggedRow url key user
+    { getLoggedWorkouts = getToday foldLoggedRow url key user
     , insert = \p -> insertJournalEntry url key user ( "", Insert p )
     , logSet = \id loggedOn index set -> insertJournalEntry url key user ( id, LogSet { set = set, number = index, loggedOn = loggedOn } )
     , deleteExercise = \id date -> insertJournalEntry url key user ( id, Delete (DeleteExerciseRequest date) )
     , editSets = \id sets -> insertJournalEntry url key user ( id, Edit (ChangeSetsAndReps sets) )
     , editName = \id name -> insertJournalEntry url key user ( id, Edit (ChangeName name) )
+    , logExercise = \id date sets -> insertJournalEntry url key user ( id, LogExercise { sets = sets, loggedOn = date } )
     }
 
 
@@ -92,9 +95,9 @@ getJournal url key user _ =
 --     in
 
 
-getExercises : AuthenticatedRequest Date Workout
-getExercises =
-    getToday foldRow
+-- getExercises : AuthenticatedRequest Date Workout
+-- getExercises =
+--     getToday foldRow
 
 
 
@@ -125,6 +128,9 @@ insertJournalEntry url key user ( id, action ) =
 
                 Edit request ->
                     encodeEditRequest id request
+
+                LogExercise { loggedOn, sets } ->
+                    encodeLogExercise id loggedOn sets
     in
     H.task
         { method = "POST"
@@ -139,25 +145,28 @@ insertJournalEntry url key user ( id, action ) =
         }
 
 
-foldRow : JournalRow -> OrderedDict String ( Int, StrengthExercise ) -> OrderedDict String ( Int, StrengthExercise )
-foldRow row workouts =
-    case row.action of
-        Insert request ->
-            insert row.exerciseId ( weekdayToNumber request.day, request.exercise ) workouts
+-- foldRow : JournalRow -> OrderedDict String ( Int, StrengthExercise ) -> OrderedDict String ( Int, StrengthExercise )
+-- foldRow row workouts =
+--     case row.action of
+--         Insert request ->
+--             insert row.exerciseId ( weekdayToNumber request.day, request.exercise ) workouts
 
-        LogSet _ ->
-            workouts
+--         LogSet _ ->
+--             workouts
 
-        Delete _ ->
-            remove row.exerciseId workouts
+--         Delete _ ->
+--             remove row.exerciseId workouts
 
-        Edit changeRequest ->
-            case changeRequest of
-                ChangeName name ->
-                    update row.exerciseId (Maybe.map (\( day, exercise ) -> ( day, { exercise | name = name } ))) workouts
+--         Edit changeRequest ->
+--             case changeRequest of
+--                 ChangeName name ->
+--                     update row.exerciseId (Maybe.map (\( day, exercise ) -> ( day, { exercise | name = name } ))) workouts
 
-                ChangeSetsAndReps sets ->
-                    update row.exerciseId (Maybe.map (\( day, exercise ) -> ( day, { exercise | sets = Array.fromList sets } ))) workouts
+--                 ChangeSetsAndReps sets ->
+--                     update row.exerciseId (Maybe.map (\( day, exercise ) -> ( day, { exercise | sets = Array.fromList sets } ))) workouts
+
+--         LogExercise { loggedOn, sets } ->
+--             log Info "not implemented"
 
 
 foldLoggedRow : JournalRow -> OrderedDict String ( Int, LoggedStrengthExercise ) -> OrderedDict String ( Int, LoggedStrengthExercise )
@@ -216,6 +225,9 @@ foldLoggedRow row workouts =
                                 )
                         )
                         workouts
+
+        LogExercise { loggedOn, sets } ->
+            update row.exerciseId (Maybe.map <| Tuple.mapSecond <| logSetsInExercise loggedOn sets) workouts
 
 
 mapTaskResult : (r -> s) -> Task RequestError r -> Task RequestError s
@@ -344,6 +356,20 @@ encodeInsertRequest request =
         ]
 
 
+encodeLogExercise : String -> Date -> List StrengthSet -> E.Value
+encodeLogExercise id date sets =
+    E.object
+        [ ( "action_type", E.string "LogExercise" )
+        , ( "payload"
+          , E.object
+                [ ( "loggedOn", E.string <| Date.toIsoString date )
+                , ( "sets", E.list encodeSet sets )
+                ]
+          )
+        , ( "exercise_id", E.string id )
+        ]
+
+
 encodeLogSet : LogSetRequest -> E.Value
 encodeLogSet { exerciseId, set, loggedOn, index } =
     E.object
@@ -422,6 +448,7 @@ type ChangeExercise
 type Action
     = Insert InsertPayload
     | LogSet { loggedOn : Date, set : StrengthSet, number : Int }
+    | LogExercise { loggedOn : Date, sets : List StrengthSet }
     | Delete DeleteExerciseRequest
     | Edit ChangeExercise
 

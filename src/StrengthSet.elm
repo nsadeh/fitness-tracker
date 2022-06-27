@@ -48,6 +48,21 @@ emptyExercise =
     }
 
 
+logSetsInExercise : Date -> List StrengthSet -> LoggedStrengthExercise -> LoggedStrengthExercise
+logSetsInExercise date sets exercise =
+    let
+        updatedSets =
+            case exercise.sets of
+                Unlogged { todo } ->
+                    Logged { loggedOn = date, sets = (List.map2 (\t s -> { todo = t, logged = s }) (Array.toList todo) sets) |> Array.fromList }
+
+                Logged logged ->
+                    logSetsInExercise date sets { name = exercise.name, sets = Unlogged { todo = Array.map (\t -> t.todo) logged.sets }, loggedOn = exercise.loggedOn }
+                        |> (\ex -> ex.sets)
+    in
+    { exercise | loggedOn = Just date, sets = updatedSets }
+
+
 logSet : Date -> StrengthSet -> LoggedStrenghtSet -> LoggedStrenghtSet
 logSet onDate set lset =
     { lset | logged = Just ( onDate, set ) }

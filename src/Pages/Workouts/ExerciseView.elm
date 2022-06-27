@@ -1,10 +1,11 @@
 module Pages.Workouts.ExerciseView exposing (viewExercise)
 
 import Array
+import Date exposing (Date)
 import Html exposing (Html, button, div, h2, input, span, text)
 import Html.Attributes exposing (checked, class, disabled, type_, value)
 import Html.Events exposing (onCheck, onClick, onInput)
-import Pages.Workouts.Utils exposing (getSetRanges)
+import Pages.Workouts.Utils exposing (dateToString, getSetRanges)
 import Pages.Workouts.WorkoutLogger exposing (Msg(..))
 import StrengthSet exposing (LoggableStrengthSets(..), LoggedStrengthExercise, StrengthSet, numSets)
 import Utils.OverrideClick exposing (overrideOnClickWith)
@@ -114,19 +115,34 @@ viewExercise { expanded, isLogged } { onOpenWorkoutEditor, onToggle, onWeightInp
                     "hidden overflow-hidden transition-all ease-in-out duration-700 clear-both"
                 )
             ]
-            (Array.indexedMap
-                (viewSet
-                    { isLogged = isLogged id }
-                    { onRepsInput = onRepsInput id, onWeightInput = onWeightInput id}
-                )
-                (case exercise.sets of
-                    Unlogged { todo } ->
-                        Array.map (\set -> ( set, Nothing )) todo
+            (List.append
+                (let
+                    ( date, workoutSets ) =
+                        case exercise.sets of
+                            Unlogged { todo } ->
+                                ( Nothing, Array.map (\set -> ( set, Nothing )) todo )
 
-                    Logged { sets } ->
-                        Array.map (\set -> ( set.todo, Just set.logged )) sets
+                            Logged { loggedOn, sets } ->
+                                ( Just loggedOn, Array.map (\set -> ( set.todo, Just set.logged )) sets )
+                 in
+                 Array.indexedMap
+                    (viewSet
+                        { isLogged = isLogged id }
+                        { onRepsInput = onRepsInput id, onWeightInput = onWeightInput id }
+                        date
+                    )
+                    workoutSets
+                    |> Array.toList
                 )
-                |> Array.toList
+                [ div [ class "flex flex-row border-b border-blue-400 justify-center py-auto px-1 sm:px-2 py-1" ]
+                    [ button
+                        [ type_ "button"
+                        , class "border-2 border-blue-400 w-32 rounded-md m-1 p-1 hover:bg-red-400"
+                        ]
+                        [ text "Log Exercise"
+                        ]
+                    ]
+                ]
             )
         ]
 
@@ -137,25 +153,25 @@ viewSet :
         { onWeightInput : Int -> String -> msg
         , onRepsInput : Int -> String -> msg
         }
+    -> Maybe Date
     -> Int
     -> ( StrengthSet, Maybe StrengthSet )
     -> Html msg
-viewSet { isLogged } { onWeightInput, onRepsInput } setNumber ( todo, logged ) =
+viewSet { isLogged } { onWeightInput, onRepsInput } loggedDate setNumber ( todo, logged ) =
     div [ class "flex flex-row border-b border-blue-400 justify-between py-auto px-1 sm:px-2 py-1" ]
         [ div [ class "d-flex justify-center my-auto mr-3 sm:block hidden" ]
             [ h2 [ class "text-xl" ]
                 [ text (String.fromInt (setNumber + 1) ++ ".")
                 ]
             ]
-        , div [ class "flex flex-row justify-between my-auto w-auto" ]
+        , div [ class "flex flex-row justify-between my-auto w-full" ]
             [ div [ class "flex flex-row justify-between sm:mr-10 mr-5" ]
-                [ div [ class "flex flex-col justify-center" ]
+                [ viewLastLoggedWeight loggedDate logged
+                , div [ class "flex flex-col justify-center" ]
                     [ div [ class "hidden text-lg pb-1" ]
                         [ text (String.fromFloat todo.weight)
                         , span [ class "text-xs" ] [ text "lbs" ]
                         ]
-
-                    -- , viewLastWeek True set.logged
                     ]
                 , div [ class "ml-3 my-auto flex flex-col" ]
                     [ div [ class "text-xs align-top" ] [ text "today(lbs):" ]
@@ -170,15 +186,7 @@ viewSet { isLogged } { onWeightInput, onRepsInput } setNumber ( todo, logged ) =
                     ]
                 ]
             , div [ class "flex flex-row justify-between mr-1" ]
-                [ div [ class "flex flex-col justify-center" ]
-                    [ div [ class "hidden text-xl pb-1" ]
-                        [ text (String.fromInt todo.reps)
-                        , span [ class "text-xs" ]
-                            [ text "reps"
-                            ]
-                        ]
-                    , viewLastLogged logged
-                    ]
+                [ viewLastLoggedSet loggedDate logged
                 , div [ class "ml-3 my-auto flex flex-col" ]
                     [ div [ class "text-xs align-top" ] [ text "today(rps):" ]
                     , input
@@ -192,23 +200,41 @@ viewSet { isLogged } { onWeightInput, onRepsInput } setNumber ( todo, logged ) =
                     ]
                 ]
             ]
-        , div []
-            [ button
-                [ type_ "button"
-                , class "border-2 border-blue-400 sm:w-24 w-20 rounded-md sm:m-2 my-2 ml-1 sm:p-2 p-1 hover:bg-blue-400"
 
-                -- , overrideOnClickWith onLogAction
-                ]
-                []
-            ]
+        -- , div []
+        --     [ button
+        --         [ type_ "button"
+        --         , class "border-2 border-blue-400 sm:w-24 w-20 rounded-md sm:m-2 my-2 ml-1 sm:p-2 p-1 hover:bg-blue-400"
+        --         -- , overrideOnClickWith onLogAction
+        --         ]
+        --         [ text "Record"]
+        --     ]
         ]
 
 
-viewLastLogged : Maybe StrengthSet -> Html msg
-viewLastLogged maybeSet =
-    case maybeSet of
-        Nothing ->
-            div [] []
+viewLastLoggedWeight : Maybe Date -> Maybe StrengthSet -> Html msg
+viewLastLoggedWeight maybeDate maybeSet =
+    case ( maybeSet, maybeDate ) of
+        ( Just set, Just date ) ->
+            div
+                [ class "flex flex-col justify-center" ]
+                [ div [ class "text-xs align-top" ] [ text (String.append " (lbs)" <| dateToString date) ]
+                , div [] [ text (String.fromFloat set.weight) ]
+                ]
 
-        Just _ ->
-            div [] []
+        _ ->
+            div [] [ span [ class "py-auto align-middle"] [ text "No prior log" ] ] 
+
+
+viewLastLoggedSet : Maybe Date -> Maybe StrengthSet -> Html msg
+viewLastLoggedSet maybeDate maybeSet =
+    case ( maybeSet, maybeDate ) of
+        ( Just set, Just date ) ->
+            div
+                [ class "flex flex-col justify-center" ]
+                [ div [ class "text-xs align-top" ] [ text (String.append " (reps)" <| dateToString date) ]
+                , div [] [ text (String.fromFloat set.weight) ]
+                ]
+
+        _ ->
+            div [] [ text "No prior log" ]

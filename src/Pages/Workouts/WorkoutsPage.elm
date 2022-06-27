@@ -1,5 +1,6 @@
 module Pages.Workouts.WorkoutsPage exposing (..)
 
+import Api.Exercises as Exercise
 import Api.Supabase exposing (AuthenticatedUser, key, url)
 import Api.User as User exposing (storeUser)
 import Array
@@ -139,7 +140,14 @@ update msg model =
                         |> Tuple.mapFirst Authenticated
 
                 LogWorkout logMsg ->
-                    WorkoutLogger.update logMsg page.log
+                    let
+                        log =
+                            \id sets ->
+                                page.api.logExercise id page.today sets
+                                    |> Task.attempt (Error.respond (\_ -> WorkoutLogger.FailedToLog) (\_ -> WorkoutLogger.LoggedWorkout id))
+                                    |> Cmd.map LogWorkout
+                    in
+                    WorkoutLogger.update { log = log } logMsg page.log
                         |> Tuple.mapFirst (updateLog page)
                         |> Tuple.mapFirst Authenticated
 

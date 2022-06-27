@@ -5,7 +5,8 @@ import Date exposing (Date)
 import Dict exposing (Dict)
 import StrengthSet exposing (LoggableStrengthSets(..), LoggedStrengthExercise, StrengthSet)
 import Utils.OrderedDict exposing (OrderedDict)
-
+import Api.Exercises as Exercise
+import Utils.Log exposing (LogType(..))
 
 type alias Model =
     Dict String { isLogged : Bool, draft : Array { reps : String, weight : String } }
@@ -19,7 +20,9 @@ type Values
 type Msg
     = RepsRecorded String Int String
     | WeightRecorded String Int String
+    | RequestLogWorkout String
     | LoggedWorkout String
+    | FailedToLog
 
 
 init : Date -> OrderedDict String LoggedStrengthExercise -> Model
@@ -31,8 +34,8 @@ init today workout =
             )
 
 
-update : Msg -> Model -> ( Model, Cmd msg )
-update msg model =
+update : { log : String -> List StrengthSet -> Cmd msg } -> Msg -> Model -> ( Model, Cmd msg )
+update { log } msg model =
     case msg of
         RepsRecorded id setNumber reps ->
             ( Dict.update id (Maybe.map (\m -> { m | draft = updateValue Reps setNumber reps m.draft })) model, Cmd.none )
@@ -42,6 +45,17 @@ update msg model =
 
         LoggedWorkout id ->
             ( Dict.update id (Maybe.map (\draft -> { draft | isLogged = True })) model, Cmd.none )
+
+        RequestLogWorkout id ->
+            ( model
+            , toExercise id model
+                |> Maybe.map Array.toList
+                |> Maybe.map (log id)
+                |> Maybe.withDefault Cmd.none
+            )
+
+        FailedToLog ->
+            Utils.Log.log Error "This is not implemented" model
 
 
 updateValue : Values -> Int -> String -> Array { reps : String, weight : String } -> Array { reps : String, weight : String }
