@@ -140,7 +140,7 @@ view editor =
                     [ class "px-3 border-2 border-blue-400 rounded-md bg-blue-900 h-auto w-auto flex flex-col items-center text-blue-200"
                     , overrideOnClickWith DoNothing
                     ]
-                    [ h2 [ class "text-3xl px-5 pt-2 text-blue-200" ]
+                    [ h2 [ class "sm:text-3xl text-xl px-5 pt-2 text-blue-200" ]
                         [ text ("Edit " ++ exercise.name)
                         ]
                     , div
@@ -170,7 +170,7 @@ viewEditorLine index set =
         , div [ class "flex flex-row pr-3" ]
             [ input
                 [ id "reps-editor"
-                , class "border rounded-md bg-blue-100 text-black pr-3"
+                , class "border rounded-md bg-blue-100 text-black pr-3 w-16"
                 , type_ "number"
                 , value (String.fromInt set.reps)
                 , onInput (ChangedRepCounts index)
@@ -180,7 +180,7 @@ viewEditorLine index set =
             ]
         , div [ class "flex flex-row pr-3" ]
             [ input
-                [ class "border rounded-md bg-blue-100 text-black pr-3"
+                [ class "border rounded-md bg-blue-100 text-black pr-3 w-16"
                 , type_ "number"
                 , value (String.fromFloat set.weight)
                 , onInput (ChangedWeight index)
