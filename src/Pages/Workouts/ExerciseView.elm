@@ -8,6 +8,7 @@ import Html.Events exposing (onCheck, onClick, onInput)
 import Pages.Workouts.Utils exposing (smallDateToString)
 import Pages.Workouts.WorkoutLogger exposing (Msg(..))
 import StrengthSet exposing (LoggableStrengthSets(..), LoggedStrengthExercise, StrengthSet, getSetRanges, numSets)
+import Swiper
 import Utils.OverrideClick exposing (overrideOnClickWith)
 
 
@@ -23,11 +24,12 @@ viewExercise :
         , onRepsInput : String -> Int -> String -> msg
         , onLogAction : String -> msg
         , onRelogAction : String -> msg
+        , onSwipeExercise : String -> Swiper.SwipeEvent -> msg
         }
     -> String
     -> LoggedStrengthExercise
     -> Html msg
-viewExercise { expanded, isLoggedToday, getEnteredData } { onOpenWorkoutEditor, onToggle, onWeightInput, onRepsInput, onLogAction, onRelogAction } id exercise =
+viewExercise { expanded, isLoggedToday, getEnteredData } { onOpenWorkoutEditor, onToggle, onWeightInput, onRepsInput, onLogAction, onRelogAction, onSwipeExercise } id exercise =
     let
         ( weights, reps ) =
             exercise.sets
@@ -42,7 +44,7 @@ viewExercise { expanded, isLoggedToday, getEnteredData } { onOpenWorkoutEditor, 
                 |> Array.toList
                 |> getSetRanges
     in
-    div [ class "border rounded-md border-blue-400 mb-3 drop-shadow-2xl h-fit" ]
+    div (class "border rounded-md border-blue-400 mb-3 drop-shadow-2xl h-fit" :: Swiper.onSwipeEvents (onSwipeExercise id))
         [ div
             [ class
                 ("cursor-pointer flex flex-row justify-between py-2 px-2"

@@ -14,6 +14,7 @@ import Swiper
 import Time
 import Url.Builder
 import Utils.OrderedDict as OrderedDict exposing (OrderedDict)
+import Dict exposing (Dict)
 
 
 type alias WorkoutsPageState =
@@ -27,6 +28,7 @@ type alias WorkoutsPageState =
     , toggled : Set String
     , workout : OrderedDict String LoggedStrengthExercise
     , log : WorkoutLogger.Model
+    , exerciseSwipeState : Dict String Swiper.SwipingState
     }
 
 
@@ -47,6 +49,7 @@ emptyState user navKey =
     , navKey = navKey
     , navbarSwipeState = Swiper.initialSwipingState
     , log = Dict.empty
+    , exerciseSwipeState = Dict.empty
     }
 
 

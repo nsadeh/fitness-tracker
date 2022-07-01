@@ -205,7 +205,7 @@ loadWorkoutsData : WorkoutsPageState -> Maybe Navigation.Action -> ( WorkoutsPag
 loadWorkoutsData state directive =
     case directive of
         Just action ->
-            Navigation.navigatePage { parseWorkout = \task -> Workout task |> doFetch } action state
+            Navigation.navigatePage { parseWorkout = \task -> Workout task |> doFetch, openEditor = \id -> Task.succeed (Editor.Opened id) |> Task.perform Editor } action state
 
         Nothing ->
             ( state, Task.perform (\date -> Navigation.LoadURL date |> Navigate) Date.today )
@@ -270,6 +270,7 @@ view model =
                     , onRepsInput = inputReps
                     , onLogAction = logWorkout
                     , onRelogAction = reopenLog
+                    , onSwipeExercise = \id event -> Navigation.SwipedExercise id event |> Navigate
                     }
 
                 exercises =
