@@ -4,6 +4,7 @@ import Array exposing (Array)
 import Date exposing (Date)
 import Json.Decode as D
 import Json.Encode as E
+import Pages.Workouts.Utils exposing (padLists)
 
 
 type alias StrengthSet =
@@ -48,13 +49,21 @@ emptyExercise =
     }
 
 
+emptyLoggedExercise : LoggedStrengthExercise
+emptyLoggedExercise =
+    { name = ""
+    , sets = Unlogged { todo = Array.empty }
+    , loggedOn = Nothing
+    }
+
+
 logSetsInExercise : Date -> List StrengthSet -> LoggedStrengthExercise -> LoggedStrengthExercise
 logSetsInExercise date sets exercise =
     let
         updatedSets =
             case exercise.sets of
                 Unlogged { todo } ->
-                    Logged { loggedOn = date, sets = (List.map2 (\t s -> { todo = t, logged = s }) (Array.toList todo) sets) |> Array.fromList }
+                    Logged { loggedOn = date, sets = List.map2 (\t s -> { todo = t, logged = s }) (Array.toList todo) sets |> Array.fromList }
 
                 Logged logged ->
                     logSetsInExercise date sets { name = exercise.name, sets = Unlogged { todo = Array.map (\t -> t.todo) logged.sets }, loggedOn = exercise.loggedOn }
@@ -130,6 +139,29 @@ changeWeightForExercise index weight exercise =
     { exercise | sets = updatedSet }
 
 
+editTodoSets : List StrengthSet -> LoggedStrengthExercise -> LoggedStrengthExercise
+editTodoSets newSets exercise =
+    case exercise.sets of
+        Unlogged { todo } ->
+            { exercise | sets = Unlogged { todo = newSets |> Array.fromList } }
+
+        Logged { sets, loggedOn } ->
+            let
+                ll =
+                    Array.map (\s -> s.logged) sets |> Array.toList
+
+                ( todos, loggeds ) =
+                    padLists newSets ll emptySet emptySet
+
+                updatedSets =
+                    Logged
+                        { loggedOn = loggedOn
+                        , sets = List.map2 (\todo logged -> { todo = todo, logged = logged }) todos loggeds |> Array.fromList
+                        }
+            in
+            { exercise | sets = updatedSets }
+
+
 
 -- Encoders/Decoders
 
@@ -193,3 +225,40 @@ numSets s =
 
         Logged { sets } ->
             Array.length sets
+
+getSetRanges : List StrengthSet -> ( String, String )
+getSetRanges sets =
+    let
+        repsOnly =
+            List.map (\set -> set.reps) sets
+
+        weightsOnly =
+            List.map (\set -> set.weight) sets
+
+        minReps =
+            List.minimum repsOnly |> Maybe.withDefault 0
+
+        maxReps =
+            List.maximum repsOnly |> Maybe.withDefault 0
+
+        minWeights =
+            List.minimum weightsOnly |> Maybe.withDefault 0
+
+        maxWeights =
+            List.maximum weightsOnly |> Maybe.withDefault 0
+
+        weightString =
+            if minWeights == maxWeights then
+                String.fromFloat minWeights
+
+            else
+                String.fromFloat minWeights ++ "-" ++ String.fromFloat maxWeights
+
+        repString =
+            if minReps == maxReps then
+                String.fromInt minReps
+
+            else
+                String.fromInt minReps ++ "-" ++ String.fromInt maxReps
+    in
+    ( weightString, repString )

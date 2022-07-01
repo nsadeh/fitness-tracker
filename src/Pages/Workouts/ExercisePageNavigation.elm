@@ -6,12 +6,12 @@ import Pages.Workouts.Utils exposing (nextDay, prevDay)
 import Pages.Workouts.WorkoutsState as PageState exposing (NavbarSwipeDirection(..), WorkoutsPageState)
 import StrengthSet exposing (LoggedStrengthExercise)
 import Swiper
-import Task
 import Url.Builder
 import Utils.Error exposing (RequestError)
 import Utils.OrderedDict exposing (OrderedDict)
 import Utils.Log exposing (log)
 import Utils.Log exposing (LogType(..))
+import Task exposing (Task)
 
 
 type Action
@@ -23,7 +23,7 @@ type Action
 
 
 navigatePage :
-    { parseWorkout : Result RequestError (OrderedDict String LoggedStrengthExercise) -> msg }
+    { parseWorkout : Task RequestError (OrderedDict String LoggedStrengthExercise) -> Cmd msg }
     -> Action
     -> WorkoutsPageState
     -> ( WorkoutsPageState, Cmd msg )
@@ -33,7 +33,7 @@ navigatePage { parseWorkout } msg model =
             ( PageState.toggle model id, Cmd.none )
 
         SelectDate date ->
-            ( PageState.updateDate model date, Task.attempt parseWorkout <| model.api.getLoggedWorkouts date )
+            ( PageState.updateDate model date, parseWorkout <| model.api.getLoggedWorkouts date )
 
         LoadURL date ->
             ( model, changeWorkoutURL model date )

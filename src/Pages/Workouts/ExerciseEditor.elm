@@ -55,11 +55,12 @@ update :
     { getExercise : String -> Maybe StrengthExercise
     , editExercise : String -> StrengthExercise -> Cmd msg
     , deleteExercise : String -> Cmd msg
+    , refresh: String -> Cmd msg
     }
     -> EditorMessage
     -> WorkoutEditor
     -> ( WorkoutEditor, Cmd msg )
-update { getExercise, editExercise, deleteExercise } msg editor =
+update { getExercise, editExercise, deleteExercise, refresh } msg editor =
     case editor of
         Closed ->
             case msg of
@@ -78,7 +79,7 @@ update { getExercise, editExercise, deleteExercise } msg editor =
                     log Error "Can't open an opened editor" editor
 
                 ClosedEditor ->
-                    ( Closed, Cmd.none )
+                    ( Closed, refresh exercise.id )
 
                 SetAdded ->
                     ( Open { exercise | exercise = addLastSet exercise.exercise }, Cmd.none )

@@ -7,13 +7,13 @@ import Date exposing (Date)
 import Dict
 import Pages.Workouts.ExerciseBuilder exposing (WorkoutBuilder, emptyForm)
 import Pages.Workouts.ExerciseEditor exposing (WorkoutEditor(..))
-import Pages.Workouts.WorkoutLogger as WorkoutLogger
+import Pages.Workouts.WorkoutLogger as WorkoutLogger exposing (isRelogging)
 import Set exposing (Set)
-import StrengthSet exposing (LoggedStrengthExercise)
+import StrengthSet exposing (LoggableStrengthSets(..), LoggedStrengthExercise)
 import Swiper
 import Time
 import Url.Builder
-import Utils.OrderedDict exposing (OrderedDict)
+import Utils.OrderedDict as OrderedDict exposing (OrderedDict)
 
 
 type alias WorkoutsPageState =
@@ -39,7 +39,7 @@ emptyState : AuthenticatedUser -> Nav.Key -> WorkoutsPageState
 emptyState user navKey =
     { api = Exercises.api url key user
     , user = user
-    , workout = Utils.OrderedDict.empty
+    , workout = OrderedDict.empty
     , toggled = Set.empty
     , editor = Closed
     , creator = emptyForm
@@ -55,6 +55,12 @@ refreshUser state user =
     { state | user = user, api = Exercises.api url key user }
 
 
+updateExercise : WorkoutsPageState -> String -> LoggedStrengthExercise -> WorkoutsPageState
+updateExercise state id exercise =
+    OrderedDict.update id (Maybe.map (\_ -> exercise)) state.workout
+        |> updateWorkout state
+
+
 updateWorkout : WorkoutsPageState -> OrderedDict String LoggedStrengthExercise -> WorkoutsPageState
 updateWorkout state workout =
     { state | workout = workout, log = WorkoutLogger.init state.today workout }
@@ -62,7 +68,7 @@ updateWorkout state workout =
 
 updateDate : WorkoutsPageState -> Date -> WorkoutsPageState
 updateDate state date =
-    { state | today = date, workout = Utils.OrderedDict.empty }
+    { state | today = date, workout = OrderedDict.empty }
 
 
 updateBuilder : WorkoutsPageState -> WorkoutBuilder -> WorkoutsPageState
@@ -123,3 +129,22 @@ changeWorkoutURL state date =
 formatDateWorkoutURL : Date -> String
 formatDateWorkoutURL date =
     Url.Builder.absolute [ "workout" ] [ Url.Builder.string "date" (Date.toIsoString date) ]
+
+
+isLoggedOn : Date -> WorkoutsPageState -> String -> Bool
+isLoggedOn date state id =
+    if isRelogging state.log id then
+        False
+
+    else
+        OrderedDict.get id state.workout
+            |> Maybe.map
+                (\w ->
+                    case w.sets of
+                        Unlogged _ ->
+                            False
+
+                        Logged { loggedOn } ->
+                            date == loggedOn
+                )
+            |> Maybe.withDefault False

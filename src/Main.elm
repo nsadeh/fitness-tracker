@@ -15,9 +15,8 @@ import Time exposing (Month(..))
 import Url exposing (Url)
 import Url.Parser exposing ((</>), oneOf, query, s)
 import Url.Parser.Query
-import Utils.Error exposing (RequestError(..))
+import Utils.Error as Error exposing (RequestError(..))
 import Utils.Log exposing (LogType(..), log)
-import Utils.Error as Error
 
 
 main : Program E.Value Model Msg
@@ -156,13 +155,13 @@ viewDocument render model =
 
         WorkoutsPage page ->
             case page of
-                Workouts.Unauthenticated ->
-                    { title = "Welcome to Fit.app"
+                Workouts.Authenticated data ->
+                    { title = "Fit.app " ++ Date.format "EEEE, MMMM d" data.today
                     , body = List.singleton (render model)
                     }
 
-                Workouts.Authenticated data ->
-                    { title = "Fit.app " ++ Date.format "EEEE, MMMM d" data.today
+                _ ->
+                    { title = "Welcome to Fit.app"
                     , body = List.singleton (render model)
                     }
 

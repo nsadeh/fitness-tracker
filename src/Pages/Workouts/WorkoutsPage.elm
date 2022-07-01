@@ -1,11 +1,11 @@
 module Pages.Workouts.WorkoutsPage exposing (..)
 
-import Api.Exercises as Exercise
 import Api.Supabase exposing (AuthenticatedUser, key, url)
 import Api.User as User exposing (storeUser)
 import Array
 import Browser.Navigation as Nav
 import Date
+import Dict
 import Html exposing (Html, a, button, div, h2, input, text)
 import Html.Attributes exposing (checked, class, href, type_)
 import Html.Events exposing (onCheck, onClick)
@@ -16,7 +16,7 @@ import Pages.Workouts.ExercisePageNavigation as Navigation
 import Pages.Workouts.ExerciseView exposing (viewExercise)
 import Pages.Workouts.Utils exposing (dateToString, nextDay, prevDay)
 import Pages.Workouts.WorkoutLogger as WorkoutLogger exposing (Msg(..))
-import Pages.Workouts.WorkoutsState exposing (NavbarSwipeDirection(..), WorkoutsPageState, emptyState, formatDateWorkoutURL, isToggled, updateBuilder, updateEditor, updateLog, updateWorkout)
+import Pages.Workouts.WorkoutsState exposing (NavbarSwipeDirection(..), WorkoutsPageState, emptyState, formatDateWorkoutURL, isLoggedOn, isToggled, updateBuilder, updateEditor, updateExercise, updateLog, updateWorkout)
 import StrengthSet exposing (LoggedStrengthExercise, asExercise)
 import Swiper
 import Task
@@ -28,16 +28,38 @@ import Utils.OrderedDict as OrderedDict exposing (OrderedDict)
 type Model
     = Unauthenticated
     | Authenticated WorkoutsPageState
+    | Loading WorkoutsPageState
+
+
+type FetchAction
+    = Workout (Task.Task RequestError (OrderedDict String LoggedStrengthExercise))
+    | Exercise String (Task.Task RequestError (Maybe LoggedStrengthExercise))
+    | User Nav.Key (Maybe Navigation.Action) (Task.Task RequestError AuthenticatedUser)
 
 
 type Msg
     = Editor Editor.EditorMessage
     | FetchedWorkout (Result RequestError (OrderedDict String LoggedStrengthExercise))
+    | FetchedExercise String (Result RequestError (Maybe LoggedStrengthExercise))
+    | FetchedUser Nav.Key (Maybe Navigation.Action) (Result RequestError AuthenticatedUser)
     | Builder Builder.Msg
     | LogWorkout WorkoutLogger.Msg
-    | FetchedUser Nav.Key (Maybe Navigation.Action) (Result RequestError AuthenticatedUser)
     | Navigate Navigation.Action
+    | Fetch FetchAction
     | NoOp
+
+
+doFetch : FetchAction -> Cmd Msg
+doFetch action =
+    case action of
+        Workout getWorkout ->
+            Task.attempt FetchedWorkout getWorkout
+
+        User key next task ->
+            Task.attempt (FetchedUser key next) task
+
+        Exercise id getExercise ->
+            Task.attempt (FetchedExercise id) getExercise
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -55,7 +77,7 @@ update msg model =
                                 ( page, action ) =
                                     loadWorkoutsData (emptyState user navKey) nextAction
                             in
-                            ( Authenticated page, Cmd.batch [ action, storeUser user ] )
+                            ( Loading page, Cmd.batch [ action, storeUser user ] )
 
                 _ ->
                     log Error "Must be logged in to do anything" model
@@ -65,28 +87,33 @@ update msg model =
                 Editor edit ->
                     let
                         getExercise =
-                            \id -> OrderedDict.get id page.workout |> Maybe.map asExercise
+                            \id ->
+                                OrderedDict.get id page.workout
+                                    |> Maybe.map asExercise
 
                         editExercise =
                             \id exercise ->
-                                Task.sequence [ page.api.editName id exercise.name, page.api.editSets id (Array.toList exercise.sets) ]
+                                Task.sequence [ page.api.editName page.today id exercise.name, page.api.editSets page.today id (Array.toList exercise.sets) ]
                                     |> Task.attempt (Error.respond (\_ -> Editor.ClosedEditor) (\_ -> Editor.DoNothing))
+                                    |> Cmd.map Editor
 
                         deleteExercise =
                             \id ->
-                                page.api.deleteExercise id page.today
+                                page.api.deleteExercise page.today id
                                     |> Task.attempt (Error.respond (\_ -> Editor.ClosedEditor) (\_ -> Editor.DoNothing))
+                                    |> Cmd.map Editor
 
                         ( edits, nextEdits ) =
                             Editor.update
                                 { getExercise = getExercise
                                 , editExercise = editExercise
                                 , deleteExercise = deleteExercise
+                                , refresh = refreshExercise page
                                 }
                                 edit
                                 page.editor
                     in
-                    ( Authenticated <| updateEditor page edits, Cmd.map Editor nextEdits )
+                    ( Authenticated <| updateEditor page edits, nextEdits )
 
                 FetchedWorkout result ->
                     case result of
@@ -112,7 +139,7 @@ update msg model =
                     let
                         createNew =
                             \exercise ->
-                                page.api.insert
+                                page.api.insert page.today
                                     { exercise = exercise
                                     , order = List.length <| OrderedDict.keys page.workout
                                     , day = Date.weekday page.today
@@ -143,23 +170,42 @@ update msg model =
                     let
                         log =
                             \id sets ->
-                                page.api.logExercise id page.today sets
-                                    |> Task.attempt (Error.respond (\_ -> WorkoutLogger.FailedToLog) (\_ -> WorkoutLogger.LoggedWorkout id))
+                                page.api.logExercise page.today id sets
+                                    |> Task.attempt (Error.respond (\_ -> WorkoutLogger.LoggedWorkout id) (\_ -> WorkoutLogger.FailedToLog))
                                     |> Cmd.map LogWorkout
                     in
-                    WorkoutLogger.update { log = log } logMsg page.log
+                    WorkoutLogger.update { log = log, refresh = refreshExercise page } logMsg page.log
                         |> Tuple.mapFirst (updateLog page)
                         |> Tuple.mapFirst Authenticated
 
                 NoOp ->
                     log Info "Nothing todo" model
 
+                Fetch action ->
+                    ( Loading page, doFetch action )
+
+                FetchedExercise id result ->
+                    case result of
+                        Err err ->
+                            log Error (Error.toString err) model
+
+                        Ok exercise ->
+                            ( Maybe.map (updateExercise page id) exercise |> Maybe.withDefault page |> Authenticated, Cmd.none )
+
+        Loading page ->
+            update msg (Authenticated page)
+
+
+refreshExercise : WorkoutsPageState -> String -> Cmd Msg
+refreshExercise page id =
+    Exercise id (page.api.getExercise page.today id) |> doFetch
+
 
 loadWorkoutsData : WorkoutsPageState -> Maybe Navigation.Action -> ( WorkoutsPageState, Cmd Msg )
 loadWorkoutsData state directive =
     case directive of
         Just action ->
-            Navigation.navigatePage { parseWorkout = FetchedWorkout } action state
+            Navigation.navigatePage { parseWorkout = \task -> Workout task |> doFetch } action state
 
         Nothing ->
             ( state, Task.perform (\date -> Navigation.LoadURL date |> Navigate) Date.today )
@@ -185,22 +231,45 @@ inputReps id setNumber repsString =
     RepsRecorded id setNumber repsString |> LogWorkout
 
 
+logWorkout : String -> Msg
+logWorkout id =
+    LogWorkout <| WorkoutLogger.RequestLogWorkout id
+
+
+reopenLog : String -> Msg
+reopenLog id =
+    LogWorkout <| WorkoutLogger.Relogging id
+
+
 view : Model -> Html Msg
 view model =
     case model of
         Unauthenticated ->
-            div [] []
+            div [ class "min-h-screen justify-center w-full bg-gray-900 py-50" ]
+                [ h2 [ class "text-lg" ]
+                    [ text "Authentication issue!"
+                    ]
+                ]
 
         Authenticated state ->
             let
                 exercisesState =
-                    { expanded = isToggled state, isLogged = \_ -> False }
+                    { expanded = isToggled state
+                    , isLoggedToday = isLoggedOn state.today state
+                    , getEnteredData =
+                        \id setNumber ->
+                            Dict.get id state.log
+                                |> Maybe.map (\d -> d.draft)
+                                |> Maybe.andThen (Array.get setNumber)
+                    }
 
                 api =
                     { onOpenWorkoutEditor = openWorkoutEditor
                     , onToggle = expand
                     , onWeightInput = inputWeight
                     , onRepsInput = inputReps
+                    , onLogAction = logWorkout
+                    , onRelogAction = reopenLog
                     }
 
                 exercises =
@@ -234,7 +303,13 @@ view model =
                         , div [ class "flex justify-center" ]
                             [ button
                                 [ class "border-2 border-blue-400 w-24 rounded-md m-2 p-2 hover:bg-blue-400 w-11/12"
-                                , onClick Builder.Opened
+                                , onClick
+                                    (if state.creator.isOpen then
+                                        Builder.Closed
+
+                                     else
+                                        Builder.Opened
+                                    )
                                 ]
                                 [ if state.creator.isOpen then
                                     text "-"
@@ -245,5 +320,12 @@ view model =
                             ]
                             |> Html.map Builder
                         ]
+                    ]
+                ]
+
+        Loading _ ->
+            div [ class "min-h-screen justify-center w-full bg-gray-900 py-50" ]
+                [ h2 [ class "text-lg" ]
+                    [ text "Loading placeholder!!"
                     ]
                 ]
