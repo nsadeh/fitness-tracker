@@ -1,7 +1,9 @@
 -- copied from https://github.com/j-maas/elm-ordered-containers/tree/1.0.0
+
+
 module Utils.OrderedDict exposing
     ( OrderedDict
-    , empty, singleton, insert, update, remove
+    , empty, singleton, insert, update, remove, swap
     , isEmpty, member, get, size
     , keys, values, toList, fromList, toDict
     , map, foldl, foldr, filter, partition
@@ -50,6 +52,7 @@ the order between the combined dictionaries.
 
 -}
 
+import Array
 import Dict exposing (Dict)
 import List
 
@@ -181,6 +184,44 @@ update key alter ((OrderedDict orderedDict) as original) =
 
                 Nothing ->
                     original
+
+
+swap : comparable -> comparable -> OrderedDict comparable v -> OrderedDict comparable v
+swap a b ((OrderedDict orderedDict) as original) =
+    let
+        arr =
+            Array.fromList orderedDict.order
+
+        indices =
+            ( getIndexOf a orderedDict.order, getIndexOf b orderedDict.order )
+    in
+    case indices of
+        ( Just aidx, Just bidx ) ->
+            OrderedDict
+                { orderedDict
+                    | order =
+                        Array.set aidx b arr
+                            |> Array.set bidx a
+                            |> Array.toList
+                }
+
+        _ ->
+            original
+
+
+getIndexOf : a -> List a -> Maybe Int
+getIndexOf a list =
+    List.indexedMap
+        (\idx val ->
+            if val == a then
+                idx
+
+            else
+                -1
+        )
+        list
+        |> List.filter (\v -> v >= 0)
+        |> List.head
 
 
 

@@ -1,14 +1,20 @@
 module Pages.Workouts.ExerciseView exposing (viewExercise)
 
 import Array
+import Color exposing (Color)
 import Date exposing (Date)
 import Html exposing (Html, button, div, h2, input, span, text)
-import Html.Attributes exposing (checked, class, disabled, type_, value)
+import Html.Attributes exposing (checked, class, disabled, height, type_, value, width)
 import Html.Events exposing (onCheck, onClick, onInput)
+import Material.Icons.Outlined as Outlined
+import Material.Icons.Types exposing (Coloring(..))
 import Pages.Workouts.Utils exposing (smallDateToString)
 import Pages.Workouts.WorkoutLogger exposing (Msg(..))
+import Pages.Workouts.WorkoutsState exposing (swapState)
 import StrengthSet exposing (LoggableStrengthSets(..), LoggedStrengthExercise, StrengthSet, getSetRanges, numSets)
+import Svg exposing (svg)
 import Swiper
+import Utils.Log exposing (LogType(..))
 import Utils.OverrideClick exposing (overrideOnClickWith)
 
 
@@ -16,6 +22,9 @@ viewExercise :
     { expanded : String -> Bool
     , isLoggedToday : String -> Bool
     , getEnteredData : String -> Int -> Maybe { weight : String, reps : String }
+    , isEditorOpen : String -> Bool
+    , swapState : Bool
+    , isChecked : String -> Bool
     }
     ->
         { onOpenWorkoutEditor : String -> msg
@@ -25,11 +34,14 @@ viewExercise :
         , onLogAction : String -> msg
         , onRelogAction : String -> msg
         , onSwipeExercise : String -> Swiper.SwipeEvent -> msg
+        , addToSwap : String -> msg
+        , removeFromSwap : String -> msg
+        , swapExercises : String -> String -> msg
         }
     -> String
     -> LoggedStrengthExercise
     -> Html msg
-viewExercise { expanded, isLoggedToday, getEnteredData } { onOpenWorkoutEditor, onToggle, onWeightInput, onRepsInput, onLogAction, onRelogAction, onSwipeExercise } id exercise =
+viewExercise { expanded, isLoggedToday, getEnteredData, isEditorOpen, swapState, isChecked } { onOpenWorkoutEditor, onToggle, onWeightInput, onRepsInput, onLogAction, onRelogAction, onSwipeExercise, addToSwap, removeFromSwap } id exercise =
     let
         ( weights, reps ) =
             exercise.sets
@@ -44,10 +56,10 @@ viewExercise { expanded, isLoggedToday, getEnteredData } { onOpenWorkoutEditor, 
                 |> Array.toList
                 |> getSetRanges
     in
-    div (class "border rounded-md border-blue-400 mb-3 drop-shadow-2xl h-fit" :: Swiper.onSwipeEvents (onSwipeExercise id))
+    div (class "border rounded-md border-blue-400 mb-3 drop-shadow-2xl" :: Swiper.onSwipeEvents (onSwipeExercise id))
         [ div
             [ class
-                ("cursor-pointer flex flex-row justify-between py-2 px-2"
+                ("cursor-pointer justify-between"
                     ++ (if expanded id then
                             " border-b border-blue-400"
 
@@ -55,50 +67,62 @@ viewExercise { expanded, isLoggedToday, getEnteredData } { onOpenWorkoutEditor, 
                             ""
                        )
                 )
-            , onClick (onToggle id)
             ]
-            [ div [ class "flex my-auto" ]
-                [ div [ class "w-56 text-xl content-center" ]
-                    [ text exercise.name
-                    ]
-                ]
-            , div [ class "flex flex-row w-48 justify-between my-auto" ]
-                [ div []
-                    [ span [ class "text-xl" ]
-                        [ text (String.fromInt (numSets exercise.sets))
-                        ]
-                    , span [ class "text-xs" ]
-                        [ text "sets"
-                        ]
-                    ]
-                , div []
-                    [ span [ class "text-xl" ]
-                        [ text weights ]
-                    , span [ class "text-xs" ]
-                        [ text "lbs"
-                        ]
-                    ]
-                , div []
-                    [ span [ class "text-xl" ]
-                        [ text reps ]
-                    , span [ class "text-xs" ]
-                        [ text "reps"
-                        ]
-                    ]
-                ]
-            , div []
-                [ div [ class "flex flex-row" ]
-                    [ button
-                        [ type_ "button"
-                        , class "border-2 border-red-400 w-24 rounded-md m-2 p-2 hover:bg-red-400 sm:block hidden"
-                        , overrideOnClickWith (onOpenWorkoutEditor id)
-                        ]
-                        [ text "Edit"
-                        ]
+            [ if swapState then
+                swapButton isChecked addToSwap removeFromSwap id
 
-                    -- , button [ type_ "button", class "border-2 border-blue-400 w-24 rounded-md m-2 p-2 hover:bg-blue-400 sm:block hidden", overrideOnClickWith (LogSets id exercise.sets |> Log) ]
-                    --     [ text "Log all!"
-                    --     ]
+              else if isEditorOpen id then
+                editButton onOpenWorkoutEditor id
+
+              else
+                div [] []
+            , div
+                [ class "cursor-pointer flex flex-row w-full justify-between p-2 overflow-hidden  h-20"
+                , onClick (onToggle id)
+                ]
+                [ div [ class "flex my-auto" ]
+                    [ div [ class "w-56 text-xl content-center" ]
+                        [ text exercise.name
+                        ]
+                    ]
+                , div [ class "flex flex-row w-30 justify-between my-auto" ]
+                    [ div []
+                        [ span [ class "text-2xl" ]
+                            [ text (String.fromInt (numSets exercise.sets))
+                            ]
+                        , span [ class "text-xs" ]
+                            [ text "sets"
+                            ]
+                        ]
+                    , div []
+                        [ span [ class "text-2xl" ]
+                            [ text weights ]
+                        , span [ class "text-xs" ]
+                            [ text "lbs"
+                            ]
+                        ]
+                    , div []
+                        [ span [ class "text-2xl" ]
+                            [ text reps ]
+                        , span [ class "text-xs" ]
+                            [ text "reps"
+                            ]
+                        ]
+                    ]
+                , div []
+                    [ div [ class "flex flex-row" ]
+                        [ button
+                            [ type_ "button"
+                            , class "border-2 border-red-400 w-24 rounded-md m-2 p-2 hover:bg-red-400 sm:block hidden"
+                            , overrideOnClickWith (onOpenWorkoutEditor id)
+                            ]
+                            [ text "Edit"
+                            ]
+
+                        -- , button [ type_ "button", class "border-2 border-blue-400 w-24 rounded-md m-2 p-2 hover:bg-blue-400 sm:block hidden", overrideOnClickWith (LogSets id exercise.sets |> Log) ]
+                        --     [ text "Log all!"
+                        --     ]
+                        ]
                     ]
                 ]
             ]
@@ -189,16 +213,15 @@ viewSet :
     -> ( StrengthSet, Maybe StrengthSet )
     -> Html msg
 viewSet { isLoggedToday, enteredData } { onWeightInput, onRepsInput } loggedDate setNumber ( todo, logged ) =
-    div [ class "flex flex-row border-b border-blue-400 justify-between py-auto px-1 sm:px-2 py-1" ]
-        [ div [ class "d-flex justify-center my-auto mr-3 sm:block hidden" ]
+    div [ class "flex flex-row border-b border-blue-400 justify-between py-auto px-1 sm:px-2 py-1 h-20" ]
+        [ div [ class "flex justify-center my-auto mr-3 sm:block hidden" ]
             [ h2 [ class "text-xl" ]
                 [ text (String.fromInt (setNumber + 1) ++ ".")
                 ]
             ]
         , div [ class "flex flex-row justify-around my-auto w-full" ]
             [ div [ class "flex flex-row justify-between sm:mr-10 mr-5" ]
-                [ viewLastLoggedWeight loggedDate logged
-                , div [ class "flex flex-col justify-center" ]
+                [ div [ class "flex flex-col justify-center" ]
                     [ div [ class "hidden text-lg pb-1" ]
                         [ text
                             (enteredData setNumber
@@ -208,46 +231,45 @@ viewSet { isLoggedToday, enteredData } { onWeightInput, onRepsInput } loggedDate
                         , span [ class "text-xs" ] [ text "lbs" ]
                         ]
                     ]
-                , div [ class "ml-3 my-auto flex flex-col" ]
+                , div [ class "ml-3 my-auto flex flex-col mr-3" ]
                     [ div [ class "text-xs align-top" ] [ text "today(lbs):" ]
                     , input
-                        [ type_ "number"
-                        , class "align-middle w-16 border rounded-md bg-blue-100 text-black disabled:bg-gray-200"
-                        , value (String.fromFloat todo.weight)
+                        [ type_ "string"
+                        , class "align-middle w-16 h-18 border rounded-md text-black"
+                        , value
+                            (enteredData setNumber
+                                |> Maybe.map (\d -> d.weight)
+                                |> Maybe.withDefault (String.fromFloat todo.weight)
+                            )
                         , disabled isLoggedToday
                         , onInput (onWeightInput setNumber)
                         ]
                         []
                     ]
+                , viewLastLoggedWeight loggedDate logged
                 ]
             , div [ class "flex flex-row justify-between mr-1" ]
-                [ viewLastLoggedReps loggedDate logged
-                , div [ class "ml-3 my-auto flex flex-col" ]
+                [ div [ class "my-auto flex flex-col mr-3" ]
                     [ div [ class "text-xs align-top" ] [ text "today(rps):" ]
-                    , input
-                        [ type_ "string"
-                        , class "align-middle w-16 border rounded-md bg-blue-100 text-black"
-                        , value
-                            (enteredData setNumber
-                                |> Maybe.map (\d -> d.reps)
-                                |> Maybe.withDefault (String.fromInt todo.reps)
-                            )
-                        , disabled isLoggedToday
-                        , onInput (onRepsInput setNumber)
+                    , div [ class "flex flex-row jutify-between" ]
+                        [ input
+                            [ type_ "string"
+                            , class "align-middle w-16 h-18 border rounded-md text-black"
+                            , value
+                                (enteredData setNumber
+                                    |> Maybe.map (\d -> d.reps)
+                                    |> Maybe.withDefault (String.fromInt todo.reps)
+                                )
+                            , disabled isLoggedToday
+                            , onInput (onRepsInput setNumber)
+                            ]
+                            []
                         ]
-                        []
                     ]
+                , viewLastLoggedReps loggedDate logged
+                , if (isLoggedToday) then unlogSetButton else logSetButton
                 ]
             ]
-
-        -- , div []
-        --     [ button
-        --         [ type_ "button"
-        --         , class "border-2 border-blue-400 sm:w-24 w-20 rounded-md sm:m-2 my-2 ml-1 sm:p-2 p-1 hover:bg-blue-400"
-        --         -- , overrideOnClickWith onLogAction
-        --         ]
-        --         [ text "Record"]
-        --     ]
         ]
 
 
@@ -277,3 +299,47 @@ viewLastLoggedReps maybeDate maybeSet =
 
         _ ->
             div [] [ text "No prior log" ]
+
+
+editButton : (String -> msg) -> String -> Html msg
+editButton onOpenWorkoutEditor id =
+    button
+        [ class "flex justify-center h-max bg-red-600 px-4 rounded-l-md"
+        , onClick (onOpenWorkoutEditor id)
+        ]
+        [ span [ class "my-auto text-white" ] [ text "Edit" ]
+        ]
+
+
+swapButton : (String -> Bool) -> (String -> msg) -> (String -> msg) -> String -> Html msg
+swapButton isChecked addToSwap removeFromSwap id =
+    input
+        [ type_ "checkbox"
+        , class "flex justify-center h-max  bg-blue-500 px-4 ml-3"
+        , onCheck
+            (\b ->
+                if b then
+                    addToSwap id
+
+                else
+                    removeFromSwap id
+            )
+        , checked (isChecked id)
+        ]
+        []
+
+
+logSetButton : Html msg
+logSetButton =
+    div [ class "my-auto fill-green-400 pl-4" ]
+        [ svg [ height 30, width 30 ]
+            [ Outlined.check_circle_outline 30 (Color <| Color.lightGreen) ]
+        ]
+
+
+unlogSetButton : Html msg
+unlogSetButton =
+    div [ class "my-auto fill-green-400 pl-4" ]
+        [ svg [ height 30, width 30 ]
+            [ Outlined.edit_note 30 (Color <| Color.lightBlue) ]
+        ]

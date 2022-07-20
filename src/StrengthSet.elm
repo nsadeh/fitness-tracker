@@ -142,7 +142,7 @@ changeWeightForExercise index weight exercise =
 editTodoSets : List StrengthSet -> LoggedStrengthExercise -> LoggedStrengthExercise
 editTodoSets newSets exercise =
     case exercise.sets of
-        Unlogged { todo } ->
+        Unlogged _ ->
             { exercise | sets = Unlogged { todo = newSets |> Array.fromList } }
 
         Logged { sets, loggedOn } ->

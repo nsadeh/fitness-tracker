@@ -14,10 +14,16 @@ type WorkoutEditor
     = Closed
     | Open { id : String, exercise : StrengthExercise, invalidBoxes : Dict Int { reps : Bool, weight : Bool } }
 
-isOpen: WorkoutEditor -> Bool
-isOpen editor = case editor of 
-    Closed -> False
-    Open _ -> True
+
+isOpen : WorkoutEditor -> Bool
+isOpen editor =
+    case editor of
+        Closed ->
+            False
+
+        Open _ ->
+            True
+
 
 toggleRepsValidity : Dict Int { reps : Bool, weight : Bool } -> Int -> Bool -> Dict Int { reps : Bool, weight : Bool }
 toggleRepsValidity state index isValid =
@@ -55,20 +61,22 @@ update :
     { getExercise : String -> Maybe StrengthExercise
     , editExercise : String -> StrengthExercise -> Cmd msg
     , deleteExercise : String -> Cmd msg
-    , refresh: String -> Cmd msg
+    , refreshExercise : String -> Cmd msg
     }
     -> EditorMessage
     -> WorkoutEditor
     -> ( WorkoutEditor, Cmd msg )
-update { getExercise, editExercise, deleteExercise, refresh } msg editor =
+update { getExercise, editExercise, deleteExercise, refreshExercise } msg editor =
     case editor of
         Closed ->
             case msg of
                 Opened id ->
                     case getExercise id of
-                        Just exercise ->  ( Open { id = id, exercise = exercise, invalidBoxes = Dict.empty }, Cmd.none )
+                        Just exercise ->
+                            ( Open { id = id, exercise = exercise, invalidBoxes = Dict.empty }, Cmd.none )
 
-                        Nothing -> log Error (id ++ " does not exist in state") editor
+                        Nothing ->
+                            log Error (id ++ " does not exist in state") editor
 
                 _ ->
                     log Error "Can't close closed editor" editor
@@ -79,7 +87,7 @@ update { getExercise, editExercise, deleteExercise, refresh } msg editor =
                     log Error "Can't open an opened editor" editor
 
                 ClosedEditor ->
-                    ( Closed, refresh exercise.id )
+                    ( Closed, refreshExercise exercise.id  )
 
                 SetAdded ->
                     ( Open { exercise | exercise = addLastSet exercise.exercise }, Cmd.none )

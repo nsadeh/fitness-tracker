@@ -16,13 +16,15 @@ import Pages.Workouts.ExercisePageNavigation as Navigation
 import Pages.Workouts.ExerciseView exposing (viewExercise)
 import Pages.Workouts.Utils exposing (dateToString, nextDay, prevDay)
 import Pages.Workouts.WorkoutLogger as WorkoutLogger exposing (Msg(..))
-import Pages.Workouts.WorkoutsState exposing (NavbarSwipeDirection(..), WorkoutsPageState, emptyState, formatDateWorkoutURL, isLoggedOn, isToggled, updateBuilder, updateEditor, updateExercise, updateLog, updateWorkout)
+import Pages.Workouts.WorkoutsState exposing (NavbarSwipeDirection(..), WorkoutsPageState, addToSwapState, emptyState, formatDateWorkoutURL, isExposedEditButton, isLoggedOn, isToggled, removeFromSwapState, swapState, swappable, updateBuilder, updateEditor, updateExercise, updateLog, updateWorkout)
+import Set
 import StrengthSet exposing (LoggedStrengthExercise, asExercise)
 import Swiper
 import Task
 import Utils.Error as Error exposing (RequestError(..))
 import Utils.Log exposing (LogType(..), log)
 import Utils.OrderedDict as OrderedDict exposing (OrderedDict)
+import Pages.Workouts.WorkoutsState exposing (removeExercise)
 
 
 type Model
@@ -45,6 +47,10 @@ type Msg
     | Builder Builder.Msg
     | LogWorkout WorkoutLogger.Msg
     | Navigate Navigation.Action
+    | SwapExerciseOrder String String
+    | AddToSwap String
+    | RemoveFromSwap String
+    | ClearSwap
     | Fetch FetchAction
     | NoOp
 
@@ -108,7 +114,7 @@ update msg model =
                                 { getExercise = getExercise
                                 , editExercise = editExercise
                                 , deleteExercise = deleteExercise
-                                , refresh = refreshExercise page
+                                , refreshExercise = refreshExercise page
                                 }
                                 edit
                                 page.editor
@@ -145,9 +151,10 @@ update msg model =
                                     , day = Date.weekday page.today
                                     }
                                     |> Task.attempt (Error.respond (\_ -> Builder.Cleared) (\_ -> Builder.Invalid))
+                                    |> Cmd.map Builder
                     in
-                    Builder.update { submit = createNew } build page.creator
-                        |> Tuple.mapBoth (updateBuilder page) (Cmd.map Builder)
+                    Builder.update { submit = createNew, refresh = page.api.getLoggedWorkouts page.today |> Workout |> doFetch } build page.creator
+                        |> Tuple.mapFirst (updateBuilder page)
                         |> Tuple.mapFirst Authenticated
 
                 FetchedUser navKey navAction result ->
@@ -190,7 +197,29 @@ update msg model =
                             log Error (Error.toString err) model
 
                         Ok exercise ->
-                            ( Maybe.map (updateExercise page id) exercise |> Maybe.withDefault page |> Authenticated, Cmd.none )
+                            ( Maybe.map (updateExercise page id) exercise |> Maybe.withDefault (removeExercise page id) |> Authenticated, Cmd.none )
+
+                SwapExerciseOrder id1 id2 ->
+                    OrderedDict.swap id1 id2 page.workout
+                        |> updateWorkout page
+                        |> (\m ->
+                                { m | swapState = Set.empty }
+                                    |> Authenticated
+                                    |> (\s -> ( s, Task.attempt (\_ -> NoOp) (page.api.swapExercises page.today id1 id2) ))
+                           )
+
+                AddToSwap id ->
+                    if Set.size page.swapState >= 2 then
+                        ( model, Cmd.none )
+
+                    else
+                        ( addToSwapState page id |> Authenticated, Cmd.none )
+
+                RemoveFromSwap id ->
+                    ( removeFromSwapState page id |> Authenticated, Cmd.none )
+
+                ClearSwap ->
+                    ( { page | swapState = Set.empty, exposedEditButton = Set.empty } |> Authenticated, Cmd.none )
 
         Loading page ->
             update msg (Authenticated page)
@@ -261,6 +290,9 @@ view model =
                             Dict.get id state.log
                                 |> Maybe.map (\d -> d.draft)
                                 |> Maybe.andThen (Array.get setNumber)
+                    , isEditorOpen = isExposedEditButton state
+                    , swapState = swapState state
+                    , isChecked = \id -> Set.member id state.swapState
                     }
 
                 api =
@@ -271,6 +303,9 @@ view model =
                     , onLogAction = logWorkout
                     , onRelogAction = reopenLog
                     , onSwipeExercise = \id event -> Navigation.SwipedExercise id event |> Navigate
+                    , addToSwap = AddToSwap
+                    , removeFromSwap = RemoveFromSwap
+                    , swapExercises = \a b -> SwapExerciseOrder a b
                     }
 
                 exercises =
@@ -301,6 +336,7 @@ view model =
                             ]
                             [ Builder.view state.creator ]
                             |> Html.map Builder
+                        , swapButton (swapState state) state
                         , div [ class "flex justify-center" ]
                             [ button
                                 [ class "border-2 border-blue-400 w-24 rounded-md m-2 p-2 hover:bg-blue-400 w-11/12"
@@ -330,3 +366,23 @@ view model =
                     [ text "Loading placeholder!!"
                     ]
                 ]
+
+
+swapButton : Bool -> WorkoutsPageState -> Html Msg
+swapButton swapState state =
+    Maybe.map
+        (\t ->
+            div [ class "flex justify-center" ]
+                [ button [ class "bg-blue-500 rounded-md", onClick (SwapExerciseOrder (Tuple.first t) (Tuple.second t)) ] [ text "Swap" ]
+                ]
+        )
+        (swappable state)
+        |> Maybe.withDefault
+            (if swapState then
+                div [ class "flex justify-center" ]
+                    [ button [ class "bg-red-500 rounded-md", onClick ClearSwap ] [ text "Exit Swap" ]
+                    ]
+
+             else
+                div [] []
+            )

@@ -4,7 +4,7 @@ import Api.Exercises as Exercises
 import Api.Supabase exposing (AuthenticatedUser, key, url)
 import Browser.Navigation as Nav
 import Date exposing (Date)
-import Dict
+import Dict exposing (Dict)
 import Pages.Workouts.ExerciseBuilder exposing (WorkoutBuilder, emptyForm)
 import Pages.Workouts.ExerciseEditor exposing (WorkoutEditor(..))
 import Pages.Workouts.WorkoutLogger as WorkoutLogger exposing (isRelogging)
@@ -14,7 +14,6 @@ import Swiper
 import Time
 import Url.Builder
 import Utils.OrderedDict as OrderedDict exposing (OrderedDict)
-import Dict exposing (Dict)
 
 
 type alias WorkoutsPageState =
@@ -29,6 +28,8 @@ type alias WorkoutsPageState =
     , workout : OrderedDict String LoggedStrengthExercise
     , log : WorkoutLogger.Model
     , exerciseSwipeState : Dict String Swiper.SwipingState
+    , exposedEditButton : Set String
+    , swapState : Set String
     }
 
 
@@ -50,6 +51,8 @@ emptyState user navKey =
     , navbarSwipeState = Swiper.initialSwipingState
     , log = Dict.empty
     , exerciseSwipeState = Dict.empty
+    , exposedEditButton = Set.empty
+    , swapState = Set.empty
     }
 
 
@@ -62,6 +65,10 @@ updateExercise : WorkoutsPageState -> String -> LoggedStrengthExercise -> Workou
 updateExercise state id exercise =
     OrderedDict.update id (Maybe.map (\_ -> exercise)) state.workout
         |> updateWorkout state
+
+removeExercise : WorkoutsPageState -> String -> WorkoutsPageState
+removeExercise state id = OrderedDict.remove id state.workout
+    |> updateWorkout state
 
 
 updateWorkout : WorkoutsPageState -> OrderedDict String LoggedStrengthExercise -> WorkoutsPageState
@@ -151,3 +158,44 @@ isLoggedOn date state id =
                             date == loggedOn
                 )
             |> Maybe.withDefault False
+
+
+exposeEditButton : WorkoutsPageState -> String -> WorkoutsPageState
+exposeEditButton state id =
+    { state | exposedEditButton = Set.insert id state.exposedEditButton }
+
+
+hideEditButton : WorkoutsPageState -> String -> WorkoutsPageState
+hideEditButton state id =
+    { state | exposedEditButton = Set.remove id state.exposedEditButton }
+
+
+isExposedEditButton : WorkoutsPageState -> String -> Bool
+isExposedEditButton state id =
+    Set.member id state.exposedEditButton
+
+
+swapState : WorkoutsPageState -> Bool
+swapState state =
+    Set.size state.exposedEditButton == 2
+
+
+addToSwapState : WorkoutsPageState -> String -> WorkoutsPageState
+addToSwapState state id =
+    { state | swapState = Set.insert id state.swapState }
+
+
+removeFromSwapState : WorkoutsPageState -> String -> WorkoutsPageState
+removeFromSwapState state id =
+    { state | swapState = Set.remove id state.swapState }
+
+
+swappable : WorkoutsPageState -> Maybe ( String, String )
+swappable state =
+    let
+        ( ma, mb ) =
+            Set.toList state.swapState
+                |> List.take 2
+                |> (\l -> ( List.head l, Maybe.andThen List.head <| List.tail l ))
+    in
+    Maybe.map2 (\x y -> (x, y) ) ma mb

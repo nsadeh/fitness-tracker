@@ -14,7 +14,7 @@ import Task
 import Time
 import Utils.Error exposing (RequestError(..), responseResult)
 import Utils.Log exposing (LogType(..))
-import Utils.OrderedDict exposing (OrderedDict, empty, filter, insert, map, remove, update)
+import Utils.OrderedDict exposing (OrderedDict, empty, filter, insert, map, remove, swap, update)
 
 
 {-| Exercises API
@@ -31,10 +31,11 @@ type alias API =
     , insert : Date -> InsertPayload -> Task RequestError ()
     , logSet : ExerciseId -> Date -> Int -> StrengthSet -> Task RequestError ()
     , logExercise : Date -> ExerciseId -> List StrengthSet -> Task RequestError ()
-    , deleteExercise : Date -> ExerciseId ->  Task RequestError ()
-    , editSets : Date -> ExerciseId ->  List StrengthSet -> Task RequestError ()
-    , editName : Date -> ExerciseId ->  String -> Task RequestError ()
-    , getExercise : Date -> ExerciseId ->  Task RequestError (Maybe LoggedStrengthExercise)
+    , deleteExercise : Date -> ExerciseId -> Task RequestError ()
+    , editSets : Date -> ExerciseId -> List StrengthSet -> Task RequestError ()
+    , editName : Date -> ExerciseId -> String -> Task RequestError ()
+    , getExercise : Date -> ExerciseId -> Task RequestError (Maybe LoggedStrengthExercise)
+    , swapExercises : Date -> ExerciseId -> ExerciseId -> Task RequestError ()
     }
 
 
@@ -43,11 +44,12 @@ api url key user =
     { getLoggedWorkouts = getToday foldLoggedRow url key user
     , insert = \d p -> insertJournalEntry url key user ( "", Insert d p )
     , logSet = \id loggedOn index set -> insertJournalEntry url key user ( id, LogSet loggedOn set index )
-    , deleteExercise = \date id  -> insertJournalEntry url key user ( id, Delete date )
+    , deleteExercise = \date id -> insertJournalEntry url key user ( id, Delete date )
     , editSets = \date id sets -> insertJournalEntry url key user ( id, Edit date (ChangeSetsAndReps sets) )
     , editName = \date id name -> insertJournalEntry url key user ( id, Edit date (ChangeName name) )
     , logExercise = \date id sets -> insertJournalEntry url key user ( id, LogExercise date sets )
     , getExercise = \date id -> getExerciseByID foldLoggedRowForExercise url key user { date = date, id = id }
+    , swapExercises = \date id with -> insertJournalEntry url key user ( id, SwapExercises date with )
     }
 
 
@@ -145,6 +147,9 @@ insertJournalEntry url key user ( id, action ) =
 
                 LogExercise loggedOn sets ->
                     encodeLogExercise id loggedOn sets
+
+                SwapExercises date with ->
+                    encodeSwapExercise date id with
     in
     H.task
         { method = "POST"
@@ -214,6 +219,9 @@ foldLoggedRowForExercise row exercise =
                         ChangeSetsAndReps sets ->
                             editTodoSets sets ex |> Just
 
+                SwapExercises _ _ ->
+                    Just ex
+
 
 foldLoggedRow : JournalRow -> OrderedDict String ( Int, LoggedStrengthExercise ) -> OrderedDict String ( Int, LoggedStrengthExercise )
 foldLoggedRow row workouts =
@@ -250,6 +258,9 @@ foldLoggedRow row workouts =
 
         LogExercise loggedOn sets ->
             update row.exerciseId (Maybe.map <| Tuple.mapSecond <| logSetsInExercise loggedOn sets) workouts
+
+        SwapExercises _ b ->
+            swap row.exerciseId b workouts
 
 
 mapTaskResult : (r -> s) -> Task RequestError r -> Task RequestError s
@@ -310,9 +321,6 @@ rowWithAction decoder =
         (D.field "as_of" decodeDate)
 
 
-
-
-
 decodeInsert : D.Decoder InsertPayload
 decodeInsert =
     D.map3 InsertPayload
@@ -344,6 +352,8 @@ decodePayload date action =
 
         "LogExercise" ->
             D.map (LogExercise date) (D.field "sets" (D.list decodeSet))
+
+        "SwapExercise" -> D.map (SwapExercises date) (D.field "with" D.string)
 
         _ ->
             D.fail ("Failed to decode this action: " ++ action)
@@ -378,6 +388,16 @@ encodeInsertRequest date request =
                 ]
           )
         , ( "as_of", E.string <| Date.toIsoString date )
+        ]
+
+
+encodeSwapExercise : Date -> String -> String -> E.Value
+encodeSwapExercise date id with =
+    E.object
+        [ ( "action_type", E.string "SwapExercise" )
+        , ( "payload", E.object [ ( "with", E.string with ) ] )
+        , ( "as_of", E.string <| Date.toIsoString date )
+        , ( "exercise_id", E.string id )
         ]
 
 
@@ -480,6 +500,7 @@ type Action
     | LogExercise Date (List StrengthSet)
     | Delete Date
     | Edit Date ChangeExercise
+    | SwapExercises Date String
 
 
 type alias JournalRow =

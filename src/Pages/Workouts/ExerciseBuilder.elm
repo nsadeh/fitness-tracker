@@ -2,13 +2,14 @@ module Pages.Workouts.ExerciseBuilder exposing (..)
 
 import Array exposing (Array)
 import Dict exposing (Dict)
-import Html exposing (Html, button, div, form, h2, h4, input, text)
+import Html exposing (Html, button, div, form, h4, input, text)
 import Html.Attributes exposing (class, placeholder, type_, value)
 import Html.Events exposing (onClick, onInput)
 import Maybe
 import StrengthSet exposing (StrengthExercise, StrengthSet)
 import Time exposing (Month(..))
 import Utils.Log exposing (LogType(..), log)
+import Html.Attributes exposing (maxlength)
 
 
 type alias WorkoutBuilder =
@@ -99,17 +100,17 @@ type Msg
     | Invalid
 
 
-update : { submit : StrengthExercise -> Cmd msg } -> Msg -> WorkoutBuilder -> ( WorkoutBuilder, Cmd msg )
-update { submit } msg model =
+update : { submit : StrengthExercise -> Cmd msg, refresh : Cmd msg } -> Msg -> WorkoutBuilder -> ( WorkoutBuilder, Cmd msg )
+update { submit, refresh } msg model =
     case msg of
         Opened ->
             ( { model | isOpen = True }, Cmd.none )
 
         Closed ->
-            ( { model | isOpen = False }, Cmd.none )
+            ( { model | isOpen = False }, refresh )
 
         Cleared ->
-            ( emptyForm, Cmd.none )
+            ( emptyForm, refresh )
 
         ChangedName name ->
             ( { model | name = name }, Cmd.none )
@@ -139,42 +140,33 @@ update { submit } msg model =
 view : WorkoutBuilder -> Html Msg
 view builder =
     div []
-        [ div [ class "flex flex-col border border-blue-400 w-24 rounded-md w-full" ]
-            [ div [ class "flex sm:flex-row flex-col sm:justify-around justify-center sm:h-16 h-24 pl-3 sm:pl-0" ]
-                [ div [ class "flex flex-row my-auto" ]
-                    [ div []
-                        [ h2 [ class "text-xl mr-4" ] [ text "Name: " ]
+        [ div [ class "flex flex-col mx-1 h-fit border border-blue-400 rounded-md max-h-56" ]
+            [ div [ class "flex sm:flex-row flex-col sm:justify-around justify-center sm:h-16 h-fit sm:pl-0 w-full" ]
+                [ div [ class "flex flex-row justify-center my-auto" ]
+                    [ input
+                        [ class "border rounded-md bg-blue-100 text-black h-12 w-10/12 px-2 my-4"
+                        , placeholder "Name"
+                        , onInput ChangedName
+                        , value builder.name
+                        , maxlength 24
                         ]
-                    , div []
-                        [ input
-                            [ class "w-80 border rounded-md bg-blue-100 text-black"
-                            , placeholder "Name"
-                            , onInput ChangedName
-                            , value builder.name
-                            ]
-                            []
-                        ]
+                        []
                     ]
-                , div [ class "flex flex-row my-auto" ]
-                    [ div []
-                        [ h4 [ class "text-xl mr-4" ] [ text "Num sets: " ]
-                        ]
-                    , div []
-                        [ input
-                            [ class "w-80 border rounded-md bg-blue-100 text-black"
-                            , placeholder "Sets"
-                            , type_ "number"
-                            , value
-                                (if builder.numSets == 0 then
-                                    ""
+                , div [ class "flex flex-row my-auto justify-center" ]
+                    [ input
+                        [ class "w-10/12 border rounded-md bg-blue-100 text-black h-12 px-2 mb-4"
+                        , placeholder "# Sets"
+                        , type_ "number"
+                        , value
+                            (if builder.numSets == 0 then
+                                ""
 
-                                 else
-                                    String.fromInt builder.numSets
-                                )
-                            , onInput (\s -> NumSetsEntered <| Maybe.withDefault 0 <| String.toInt s)
-                            ]
-                            []
+                             else
+                                String.fromInt builder.numSets
+                            )
+                        , onInput (\s -> NumSetsEntered <| Maybe.withDefault 0 <| String.toInt s)
                         ]
+                        []
                     ]
                 ]
             , div [] [ viewSetForm builder ]
@@ -193,17 +185,16 @@ viewSetForm form =
 
 viewFormSingleSet : Int -> Html Msg
 viewFormSingleSet index =
-    div [ class "flex flex-row justify-between px-6 pb-3" ]
-        [ div []
-            [ h4 [ class "text-lg" ] [ text (String.fromInt index ++ ".") ]
-            ]
-        , div [ class "flex flow-row" ]
-            [ h4 [ class "text-lg pr-2" ]
-                [ text "Starting weight: " ]
-            , input [ class "sm:w-fit w-24 flex border rounded-md bg-blue-100 text-black pr-3", placeholder "Weight", type_ "number", onInput (UpdatedWeight index) ] []
-            ]
-        , div [ class "flex flow-row" ]
-            [ h4 [ class "text-lg pr-2" ] [ text "Reps: " ]
-            , input [ class "sm:w-fit w-24 flex border rounded-md bg-blue-100 text-black pr-3", placeholder "Reps", type_ "number", onInput (UpdatedReps index) ] []
+    div [ class "flex flex-row justify-center" ]
+        [ div [ class "flex flex-row justify-between pb-3 w-10/12" ]
+            [ div [ class "w-6 my-auto" ]
+                [ h4 [ class "text-2xl" ] [ text <| String.fromInt index ]
+                ]
+            , div [ class "flex flow-row" ]
+                [ input [ class "sm:w-fit w-32 h-10 flex border rounded-md bg-blue-100 text-black pl-1 pr-3", placeholder "Starting weight", type_ "number", onInput (UpdatedWeight index) ] []
+                ]
+            , div [ class "flex flow-row" ]
+                [ input [ class "sm:w-fit w-32 h-10 flex border rounded-md bg-blue-100 text-black pl-1 pr-3", placeholder "Starting reps", type_ "number", onInput (UpdatedReps index) ] []
+                ]
             ]
         ]

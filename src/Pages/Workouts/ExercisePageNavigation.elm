@@ -12,6 +12,8 @@ import Url.Builder
 import Utils.Error exposing (RequestError)
 import Utils.Log exposing (LogType(..), log)
 import Utils.OrderedDict exposing (OrderedDict)
+import Pages.Workouts.WorkoutsState exposing (exposeEditButton)
+import Pages.Workouts.WorkoutsState exposing (hideEditButton)
 
 
 type Action
@@ -24,7 +26,9 @@ type Action
 
 
 navigatePage :
-    { parseWorkout : Task RequestError (OrderedDict String LoggedStrengthExercise) -> Cmd msg, openEditor : String -> Cmd msg }
+    { parseWorkout : Task RequestError (OrderedDict String LoggedStrengthExercise) -> Cmd msg
+    , openEditor : String -> Cmd msg
+    }
     -> Action
     -> WorkoutsPageState
     -> ( WorkoutsPageState, Cmd msg )
@@ -74,10 +78,10 @@ navigatePage { parseWorkout, openEditor } msg model =
                 Just direction ->
                     case direction of
                         Left ->
-                            ( swipedState, openEditor id )
+                            ( exposeEditButton swipedState id, Cmd.none )
 
                         Right ->
-                            ( swipedState, openEditor id )
+                            ( hideEditButton swipedState id, Cmd.none )
 
 
 changeWorkoutURL : WorkoutsPageState -> Date -> Cmd msg
