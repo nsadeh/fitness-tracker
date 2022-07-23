@@ -13,6 +13,7 @@ import Pages.Workouts.WorkoutLogger exposing (Msg(..))
 import Pages.Workouts.WorkoutsState exposing (swapState)
 import StrengthSet exposing (LoggableStrengthSets(..), LoggedStrengthExercise, StrengthSet, getSetRanges, numSets)
 import Svg exposing (svg)
+import Svg.Attributes as SvgAttributes
 import Swiper
 import Utils.Log exposing (LogType(..))
 import Utils.OverrideClick exposing (overrideOnClickWith)
@@ -56,10 +57,11 @@ viewExercise { expanded, isLoggedToday, getEnteredData, isEditorOpen, swapState,
                 |> Array.toList
                 |> getSetRanges
     in
-    div (class "border rounded-md border-blue-400 mb-3 drop-shadow-2xl" :: Swiper.onSwipeEvents (onSwipeExercise id))
-        [ div
+    div [ class "exercise-panel mb-3 drop-shadow-2xl flex flex-row overflow-x-scroll snap-x" ]
+        [ if (expanded id) then div [] [] else editButton onOpenWorkoutEditor id
+        , div
             [ class
-                ("cursor-pointer justify-between"
+                ("snap-start cursor-pointer justify-between "
                     ++ (if expanded id then
                             " border-b border-blue-400"
 
@@ -77,7 +79,7 @@ viewExercise { expanded, isLoggedToday, getEnteredData, isEditorOpen, swapState,
               else
                 div [] []
             , div
-                [ class "cursor-pointer flex flex-row w-full justify-between p-2 overflow-hidden  h-20"
+                [ class "cursor-pointer flex flex-row w-full justify-between p-2  h-20 border rounded-md border-blue-400"
                 , onClick (onToggle id)
                 ]
                 [ div [ class "flex my-auto" ]
@@ -163,11 +165,11 @@ viewExercise { expanded, isLoggedToday, getEnteredData, isEditorOpen, swapState,
                     workoutSets
                     |> Array.toList
                 )
-                [ div [ class "flex flex-row border-b border-blue-400 justify-center py-auto px-1 sm:px-2 py-1" ]
+                [ div [ class "flex flex-row border-b border-blue-400 justify-center py-auto px-1 sm:px-2 py-1 h-20" ]
                     [ button
                         [ type_ "button"
                         , class
-                            ("border-2 border-blue-400 w-32 rounded-md m-1 p-1 hover:bg-blue-400"
+                            ("border-2 border-blue-400 w-32 rounded-md my-auto p-1 hover:bg-blue-400 h-12"
                                 ++ (if isLoggedToday id then
                                         " hidden"
 
@@ -182,7 +184,7 @@ viewExercise { expanded, isLoggedToday, getEnteredData, isEditorOpen, swapState,
                     , button
                         [ type_ "button"
                         , class
-                            ("border-2 border-red-400 w-32 rounded-md m-1 p-1 hover:bg-red-400"
+                            ("border-2 border-red-400 w-32 rounded-md my-auto p-1 hover:bg-red-400 h-12"
                                 ++ (if isLoggedToday id then
                                         ""
 
@@ -267,7 +269,11 @@ viewSet { isLoggedToday, enteredData } { onWeightInput, onRepsInput } loggedDate
                         ]
                     ]
                 , viewLastLoggedReps loggedDate logged
-                , if (isLoggedToday) then unlogSetButton else logSetButton
+                , if isLoggedToday then
+                    unlogSetButton
+
+                  else
+                    logSetButton
                 ]
             ]
         ]
@@ -303,11 +309,17 @@ viewLastLoggedReps maybeDate maybeSet =
 
 editButton : (String -> msg) -> String -> Html msg
 editButton onOpenWorkoutEditor id =
-    button
-        [ class "flex justify-center h-max bg-red-600 px-4 rounded-l-md"
-        , onClick (onOpenWorkoutEditor id)
-        ]
-        [ span [ class "my-auto text-white" ] [ text "Edit" ]
+    button [ class "flex flex-col jutify-center h-max bg-red-700 rounded-md px-5 mr-2 snap-end", onClick (onOpenWorkoutEditor id) ]
+        [ div [ class "my-auto" ]
+            [ svg [ height 30, width 30, SvgAttributes.class "fill-gray-400" ]
+                [ Outlined.edit_note 30 Inherit ]
+            , div
+                [ class "flex justify-center"
+                , onClick (onOpenWorkoutEditor id)
+                ]
+                [ span [ class "text-gray-200 text-sm" ] [ text "Edit" ]
+                ]
+            ]
         ]
 
 
@@ -333,13 +345,13 @@ logSetButton : Html msg
 logSetButton =
     div [ class "my-auto fill-green-400 pl-4" ]
         [ svg [ height 30, width 30 ]
-            [ Outlined.check_circle_outline 30 (Color <| Color.lightGreen) ]
+            [ Outlined.check_circle_outline 30 (Color <| Color.rgb255 74 222 128) ]
         ]
 
 
 unlogSetButton : Html msg
 unlogSetButton =
     div [ class "my-auto fill-green-400 pl-4" ]
-        [ svg [ height 30, width 30 ]
-            [ Outlined.edit_note 30 (Color <| Color.lightBlue) ]
+        [ svg [ height 30, width 30, SvgAttributes.class "fill-green-400" ]
+            [ Outlined.edit_note 30 (Color <| Color.rgb255 56 189 248) ]
         ]

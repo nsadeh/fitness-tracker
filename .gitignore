@@ -1,12 +1,14 @@
-.cache/
-.vscode/
-dist/
-elm-stuff/
-node_modules/
-.DS_Store
-elm.js
-index.html
-.parcel-cache
+# Distribution
+build/
 
-# Local Netlify folder
-.netlify
+# elm-package generated files
+elm-stuff
+
+# elm-repl generated files
+repl-temp-*
+
+# Dependency directories
+node_modules
+
+# Desktop Services Store on macOS
+.DS_Store

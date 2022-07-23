@@ -19,8 +19,7 @@
             "emilianobovetti/elm-toast": "1.0.1",
             "icidasset/elm-material-icons": "10.0.0",
             "justinmimbs/date": "4.0.1",
-            "marshallformula/elm-swiper": "1.0.2",
-            "mdgriffith/elm-ui": "1.1.8"
+            "marshallformula/elm-swiper": "1.0.2"
         },
         "indirect": {
             "elm/bytes": "1.0.8",
