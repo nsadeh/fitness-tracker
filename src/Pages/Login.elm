@@ -2,26 +2,23 @@ module Pages.Login exposing (..)
 
 import Api.Supabase exposing (AuthenticatedUser, key, url)
 import Api.User exposing (LoginInfo, api, setEmail, setPassword)
-import Browser.Navigation exposing (Key)
 import Html exposing (Html, button, div, input, p, text)
-import Html.Attributes exposing (class, placeholder, type_)
+import Html.Attributes exposing (class, placeholder, type_, value)
 import Html.Events exposing (onClick, onInput)
 import Http
 import Task
-import Utils.Log exposing (LogType(..), log)
 import Utils.Error exposing (RequestError)
+import Utils.Log exposing (LogLevel(..), log)
 
 
 type alias Model =
     { info : LoginInfo
-    , navKey : Key
     }
 
 
-empty : Key -> Model
-empty key =
+empty : Model
+empty =
     { info = Api.User.empty
-    , navKey = key
     }
 
 
@@ -36,6 +33,7 @@ type Msg
     | LoginFailed RequestError
     | LoginSucceeded AuthenticatedUser
     | SubmittedRegistration
+    | LoadLogin
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -58,6 +56,9 @@ update msg model =
 
         SubmittedRegistration ->
             log Info "Not taking new users" model
+
+        LoadLogin ->
+            ( model, Cmd.none )
 
 
 
@@ -113,25 +114,18 @@ printError error =
 -- VIEW --
 
 
-view : { title : String, content : Html Msg }
-view =
-    { title = "Login to Fit.app"
-    , content = viewLogin
-    }
-
-
-viewLogin : Html Msg
-viewLogin =
+view : Model -> Html Msg
+view model =
     div [ class "flex justify-center h-screen bg-gray-900 text-blue-200" ]
         [ div [ class "min-w-sm sm:max-w-lg" ]
             [ div [ class "pt-8 sm:pt-24 sm:justify-start justify-center" ]
                 [ p [ class "text-4xl sm:text-left text-center" ] [ text "Welcome to Fit.app!" ]
                 ]
             , div [ class "flex flex-col justify-center p-4 sm:py-10 text-black" ]
-                [ input [ class "min-w-full border-2 rounded-md p-2 m-1 bg-blue-200", placeholder "Email", onInput EnteredEmail ] []
-                , input [ class "min-w-full border-2 rounded-md p-2 m-1 bg-blue-200", type_ "password", placeholder "Password", onInput EnteredPassword ] []
+                [ input [ class "min-w-full border-2 rounded-md p-2 m-1 bg-blue-200", placeholder "Email", onInput EnteredEmail, value model.info.email ] []
+                , input [ class "min-w-full border-2 rounded-md p-2 m-1 bg-blue-200", type_ "password", placeholder "Password", onInput EnteredPassword, value model.info.password ] []
                 ]
-            , div [ class "flex justify-center"]
+            , div [ class "flex justify-center" ]
                 [ button [ class "border-2 border-blue-400 w-24 rounded-md m-2 p-2 hover:bg-blue-400", type_ "button", onClick SubmittedLogin ] [ text "Log in" ]
                 , button [ class "border-2 border-blue-200 w-24 rounded-md m-2 p-2 hover:bg-blue-400", type_ "button", onClick SubmittedRegistration ] [ text "Sign up" ]
                 ]

@@ -2,7 +2,6 @@ module Pages.Workouts.Utils exposing (..)
 
 import Date exposing (Date, Unit(..))
 
-
 prevDay : Date -> Date
 prevDay date =
     Date.add Days -1 date

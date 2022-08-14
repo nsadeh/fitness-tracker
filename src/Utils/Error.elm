@@ -1,5 +1,6 @@
 module Utils.Error exposing (..)
 
+import Effects exposing (Effect(..))
 import Http as H
 import Json.Decode as D
 
@@ -56,8 +57,8 @@ responseResult response =
             H.NetworkError |> Http |> Err
 
 
-respond : (a -> msg) -> (RequestError -> msg) -> Result RequestError a -> msg
-respond good bad result =
+handle : (a -> msg) -> (RequestError -> msg) -> Result RequestError a -> msg
+handle good bad result =
     case result of
         Err err ->
             bad err

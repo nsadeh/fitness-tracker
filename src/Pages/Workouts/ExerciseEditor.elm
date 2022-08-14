@@ -1,21 +1,81 @@
-module Pages.Workouts.ExerciseEditor exposing (..)
+module Pages.Workouts.ExerciseEditor exposing (Model, Msg, closed, isOpen, open, update, view)
 
 import Array
+import Date exposing (Date)
 import Dict exposing (Dict)
+import Effects as Effects exposing (Effect(..), addEffect)
 import Html exposing (Html, button, div, h2, input, label, span, text)
 import Html.Attributes exposing (class, for, id, type_, value)
 import Html.Events exposing (onClick, onInput)
 import StrengthSet exposing (StrengthExercise, StrengthSet, addLastSet, changeRepCountForExercise, changeWeightForExercise, removeSet)
-import Utils.Log exposing (LogType(..), log)
+import Utils.Log exposing (LogLevel(..))
 import Utils.OverrideClick exposing (overrideOnClickWith)
 
 
-type WorkoutEditor
+type alias BoxValidators =
+    Dict Int { reps : Bool, weight : Bool }
+
+
+type alias EditorArgs =
+    { exerciseId : String, exercise : StrengthExercise, invalidBoxes : BoxValidators, date : Date }
+
+
+type Model
     = Closed
-    | Open { id : String, exercise : StrengthExercise, invalidBoxes : Dict Int { reps : Bool, weight : Bool } }
+    | Open EditorArgs
 
 
-isOpen : WorkoutEditor -> Bool
+closed : Model
+closed =
+    Closed
+
+
+open : String -> StrengthExercise -> Date -> Msg
+open exerciseId exercise date =
+    Opened date exerciseId exercise
+
+
+updateExercise : EditorArgs -> StrengthExercise -> Model
+updateExercise args exercise =
+    Open { args | exercise = exercise }
+
+
+updateValidators : BoxValidators -> Model -> Model
+updateValidators validators editor =
+    case editor of
+        Closed ->
+            Closed
+
+        Open args ->
+            Open { args | invalidBoxes = validators }
+
+
+updateRepNumber : EditorArgs -> Int -> Maybe Int -> Model
+updateRepNumber args setNumber reps =
+    case reps of
+        Just repNumber ->
+            changeRepCountForExercise setNumber repNumber args.exercise
+                |> updateExercise args
+                |> updateValidators (toggleRepsValidity args.invalidBoxes setNumber False)
+
+        Nothing ->
+            toggleRepsValidity args.invalidBoxes setNumber True
+                |> (\val -> updateValidators val (Open args))
+
+
+updateWeightNumber : EditorArgs -> Int -> Maybe Float -> Model
+updateWeightNumber args setNumber weight =
+    case weight of
+        Just weightNumber ->
+            changeWeightForExercise setNumber weightNumber args.exercise
+                |> updateExercise args
+                |> updateValidators (toggleWeightValidity args.invalidBoxes setNumber False)
+
+        Nothing ->
+            toggleWeightValidity args.invalidBoxes setNumber True |> (\val -> updateValidators val (Open args))
+
+
+isOpen : Model -> Bool
 isOpen editor =
     case editor of
         Closed ->
@@ -25,7 +85,7 @@ isOpen editor =
             True
 
 
-toggleRepsValidity : Dict Int { reps : Bool, weight : Bool } -> Int -> Bool -> Dict Int { reps : Bool, weight : Bool }
+toggleRepsValidity : BoxValidators -> Int -> Bool -> BoxValidators
 toggleRepsValidity state index isValid =
     case Dict.get index state of
         Nothing ->
@@ -35,7 +95,7 @@ toggleRepsValidity state index isValid =
             Dict.insert index { record | reps = isValid } state
 
 
-toggleWeightValidity : Dict Int { reps : Bool, weight : Bool } -> Int -> Bool -> Dict Int { reps : Bool, weight : Bool }
+toggleWeightValidity : BoxValidators -> Int -> Bool -> BoxValidators
 toggleWeightValidity state index isValid =
     case Dict.get index state of
         Nothing ->
@@ -45,95 +105,72 @@ toggleWeightValidity state index isValid =
             Dict.insert index { record | weight = isValid } state
 
 
-type EditorMessage
-    = Opened String
+type Msg
+    = Opened Date String StrengthExercise
     | ClosedEditor
     | SetAdded
     | SetRemoved Int
     | ChangedRepCounts Int String
     | ChangedWeight Int String
-    | EditSubmitted
+    | EditSetsSubmitted
     | DeletedSubmitted
     | DoNothing
 
 
-update :
-    { getExercise : String -> Maybe StrengthExercise
-    , editExercise : String -> StrengthExercise -> Cmd msg
-    , deleteExercise : String -> Cmd msg
-    , refreshExercise : String -> Cmd msg
-    }
-    -> EditorMessage
-    -> WorkoutEditor
-    -> ( WorkoutEditor, Cmd msg )
-update { getExercise, editExercise, deleteExercise, refreshExercise } msg editor =
-    case editor of
+update : Msg -> Model -> ( Model, List Effect )
+update msg model =
+    case model of
         Closed ->
             case msg of
-                Opened id ->
-                    case getExercise id of
-                        Just exercise ->
-                            ( Open { id = id, exercise = exercise, invalidBoxes = Dict.empty }, Cmd.none )
-
-                        Nothing ->
-                            log Error (id ++ " does not exist in state") editor
+                Opened date id exercise ->
+                    ( Open { exerciseId = id, exercise = exercise, invalidBoxes = Dict.empty, date = date }, [] )
 
                 _ ->
-                    log Error "Can't close closed editor" editor
+                    ( model, [ Log Info "Editor is already closed" ] )
 
-        Open exercise ->
+        Open editor ->
             case msg of
-                Opened _ ->
-                    log Error "Can't open an opened editor" editor
+                Opened date newID newExercise ->
+                    update (Opened date newID newExercise) Closed
 
                 ClosedEditor ->
-                    ( Closed, refreshExercise exercise.id  )
+                    Effects.none Closed
 
                 SetAdded ->
-                    ( Open { exercise | exercise = addLastSet exercise.exercise }, Cmd.none )
+                    addLastSet editor.exercise
+                        |> updateExercise editor
+                        |> Effects.none
 
-                SetRemoved index ->
-                    ( Open { exercise | exercise = removeSet index exercise.exercise }, Cmd.none )
+                SetRemoved setNumber ->
+                    removeSet setNumber editor.exercise
+                        |> updateExercise editor
+                        |> Effects.none
 
-                EditSubmitted ->
-                    ( editor, editExercise exercise.id exercise.exercise )
+                ChangedRepCounts setNumber repString ->
+                    String.toInt repString
+                        |> updateRepNumber editor setNumber
+                        |> Effects.none
+
+                ChangedWeight setNumber weightString ->
+                    String.toFloat weightString
+                        |> updateWeightNumber editor setNumber
+                        |> Effects.none
+
+                EditSetsSubmitted ->
+                    ( model, [] )
+                        |> addEffect (EditExercise editor.date editor.exerciseId <| Array.toList editor.exercise.sets)
+                        |> addEffect (FetchExercise editor.date editor.exerciseId)
 
                 DeletedSubmitted ->
-                    ( editor, deleteExercise exercise.id )
-
-                ChangedRepCounts index maybeReps ->
-                    case String.toInt maybeReps of
-                        Nothing ->
-                            ( Open { exercise | invalidBoxes = toggleRepsValidity exercise.invalidBoxes index False }, Cmd.none )
-
-                        Just reps ->
-                            ( Open
-                                { exercise
-                                    | invalidBoxes = toggleRepsValidity exercise.invalidBoxes index True
-                                    , exercise = changeRepCountForExercise index reps exercise.exercise
-                                }
-                            , Cmd.none
-                            )
-
-                ChangedWeight index maybeWeight ->
-                    case String.toFloat maybeWeight of
-                        Nothing ->
-                            ( Open { exercise | invalidBoxes = toggleWeightValidity exercise.invalidBoxes index False }, Cmd.none )
-
-                        Just weight ->
-                            ( Open
-                                { exercise
-                                    | invalidBoxes = toggleWeightValidity exercise.invalidBoxes index True
-                                    , exercise = changeWeightForExercise index weight exercise.exercise
-                                }
-                            , Cmd.none
-                            )
+                    ( model, [] )
+                        |> addEffect (DeleteExercise editor.date editor.exerciseId)
+                        |> addEffect (FetchExercise editor.date editor.exerciseId)
 
                 DoNothing ->
-                    ( editor, Cmd.none )
+                    model |> Effects.none
 
 
-view : WorkoutEditor -> Html EditorMessage
+view : Model -> Html Msg
 view editor =
     case editor of
         Closed ->
@@ -162,13 +199,13 @@ view editor =
                         ]
                     , div [ class "flex flex-row justify-between w-6/12" ]
                         [ button [ class "border-2 border-red-400 rounded-md mt-1 mb-3 p-2 hover:bg-red-400 w-5/12", overrideOnClickWith DeletedSubmitted ] [ text "Delete" ]
-                        , button [ class "border-2 border-blue-400 rounded-md mt-1 mb-3 p-2 hover:bg-blue-400 w-5/12", overrideOnClickWith EditSubmitted ] [ text "Submit" ]
+                        , button [ class "border-2 border-blue-400 rounded-md mt-1 mb-3 p-2 hover:bg-blue-400 w-5/12", overrideOnClickWith EditSetsSubmitted ] [ text "Submit" ]
                         ]
                     ]
                 ]
 
 
-viewEditorLine : Int -> StrengthSet -> Html EditorMessage
+viewEditorLine : Int -> StrengthSet -> Html Msg
 viewEditorLine index set =
     div [ class "flex flex-row my-2 h-11" ]
         [ div [ class "pr-2" ]

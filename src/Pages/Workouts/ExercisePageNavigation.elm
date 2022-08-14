@@ -1,134 +1,93 @@
-module Pages.Workouts.ExercisePageNavigation exposing (Action(..), navigatePage)
+module Pages.Workouts.ExercisePageNavigation exposing (NavAction(..), navigatePage, expand)
 
-import Browser.Navigation as Nav
+import Actions as Actions exposing (Action(..))
 import Date exposing (Date)
-import Dict
+import Effects as Effects exposing (Effect(..), withEffect)
 import Pages.Workouts.Utils exposing (nextDay, prevDay)
-import Pages.Workouts.WorkoutsState as PageState exposing (NavbarSwipeDirection(..), WorkoutsPageState)
-import StrengthSet exposing (LoggedStrengthExercise)
+import Pages.Workouts.WorkoutsState as State exposing (State)
 import Swiper
-import Task exposing (Task)
-import Url.Builder
-import Utils.Error exposing (RequestError)
-import Utils.Log exposing (LogType(..), log)
-import Utils.OrderedDict exposing (OrderedDict)
-import Pages.Workouts.WorkoutsState exposing (exposeEditButton)
-import Pages.Workouts.WorkoutsState exposing (hideEditButton)
+import Utils.Log exposing (LogLevel(..))
 
 
-type Action
+type NavbarSwipeDirection
+    = Left
+    | Right
+
+expand: String -> NavAction
+expand exerciseId = ExpandExercise exerciseId
+
+-- Update --
+
+type NavAction
     = ExpandExercise String
     | SelectDate Date
-    | LoadURL Date
+    | SelectToday
     | SwipedNavbar Swiper.SwipeEvent
-    | SwipedExercise String Swiper.SwipeEvent
     | ImproperSelection String
 
 
-navigatePage :
-    { parseWorkout : Task RequestError (OrderedDict String LoggedStrengthExercise) -> Cmd msg
-    , openEditor : String -> Cmd msg
-    }
-    -> Action
-    -> WorkoutsPageState
-    -> ( WorkoutsPageState, Cmd msg )
-navigatePage { parseWorkout, openEditor } msg model =
-    case msg of
+navigatePage : NavAction -> State -> ( State, List Effect, List Action )
+navigatePage action state =
+    case action of
         ExpandExercise id ->
-            ( PageState.toggle model id, Cmd.none )
+            state
+                |> State.toggle id
+                |> Effects.none
+                |> Actions.none
 
         SelectDate date ->
-            ( PageState.updateDate model date, parseWorkout <| model.api.getLoggedWorkouts date )
-
-        LoadURL date ->
-            ( model, changeWorkoutURL model date )
+            state
+                |> State.updateDate date
+                |> withEffect (FetchWorkout date)
+                |> Actions.none
 
         SwipedNavbar event ->
             let
                 ( swipedState, swipeDirection ) =
-                    handleNavbarSwipe model event
+                    handleNavbarSwipe state event
             in
             case swipeDirection of
                 Nothing ->
-                    ( swipedState, Cmd.none )
-
-                Just direction ->
-                    navigatePage { parseWorkout = parseWorkout, openEditor = openEditor }
-                        (case direction of
-                            Left ->
-                                LoadURL <| prevDay swipedState.today
-
-                            Right ->
-                                LoadURL <| nextDay swipedState.today
-                        )
-                        swipedState
-
-        ImproperSelection err ->
-            log Error err model
-
-        SwipedExercise id event ->
-            let
-                ( swipedState, swipeDirection ) =
-                    handleExerciseSwipe model id event
-            in
-            case swipeDirection of
-                Nothing ->
-                    ( swipedState, Cmd.none )
+                    swipedState
+                        |> Effects.none
+                        |> Actions.none
 
                 Just direction ->
                     case direction of
                         Left ->
-                            ( exposeEditButton swipedState id, Cmd.none )
+                            swipedState
+                                |> Effects.none
+                                |> Actions.addAction (GoToWorkout <| prevDay <| State.today swipedState)
 
                         Right ->
-                            ( hideEditButton swipedState id, Cmd.none )
+                            swipedState
+                                |> Effects.none
+                                |> Actions.addAction (GoToWorkout <| nextDay <| State.today swipedState)
+
+        ImproperSelection selection ->
+            state
+                |> Effects.withEffect (Log Error selection)
+                |> Actions.none
+
+        SelectToday ->
+            state
+                |> Effects.withEffect LoadTodayWorkout
+                |> Actions.none
+            
 
 
-changeWorkoutURL : WorkoutsPageState -> Date -> Cmd msg
-changeWorkoutURL state date =
-    Nav.pushUrl state.navKey <| formatDateWorkoutURL date
-
-
-formatDateWorkoutURL : Date -> String
-formatDateWorkoutURL date =
-    Url.Builder.absolute [ "workout" ] [ Url.Builder.string "date" (Date.toIsoString date) ]
-
-
-handleNavbarSwipe : WorkoutsPageState -> Swiper.SwipeEvent -> ( WorkoutsPageState, Maybe NavbarSwipeDirection )
+handleNavbarSwipe : State -> Swiper.SwipeEvent -> ( State, Maybe NavbarSwipeDirection )
 handleNavbarSwipe state event =
     let
         ( _, swipedLeft ) =
-            Swiper.hasSwipedLeft event state.navbarSwipeState
+            State.swipeState state
+                |> Swiper.hasSwipedLeft event
 
         ( nextState, swipedRight ) =
-            Swiper.hasSwipedRight event state.navbarSwipeState
+            State.swipeState state
+                |> Swiper.hasSwipedRight event
     in
-    ( { state | navbarSwipeState = nextState }
-    , if swipedRight then
-        Just Right
-
-      else if swipedLeft then
-        Just Left
-
-      else
-        Nothing
-    )
-
-
-handleExerciseSwipe : WorkoutsPageState -> String -> Swiper.SwipeEvent -> ( WorkoutsPageState, Maybe NavbarSwipeDirection )
-handleExerciseSwipe state id event =
-    let
-        swipeState =
-            Dict.get id state.exerciseSwipeState
-                |> Maybe.withDefault Swiper.initialSwipingState
-
-        ( _, swipedLeft ) =
-            Swiper.hasSwipedLeft event swipeState
-
-        ( nextState, swipedRight ) =
-            Swiper.hasSwipedRight event swipeState
-    in
-    ( { state | exerciseSwipeState = Dict.insert id nextState state.exerciseSwipeState }
+    ( State.updateSwipe nextState state
     , if swipedRight then
         Just Right
 

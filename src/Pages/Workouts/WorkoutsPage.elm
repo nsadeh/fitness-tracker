@@ -1,388 +1,429 @@
-module Pages.Workouts.WorkoutsPage exposing (..)
+module Pages.Workouts.WorkoutsPage exposing (Model, Msg(..), dateOf, goToDate, loading, render, update, view, withNavError)
 
-import Api.Supabase exposing (AuthenticatedUser, key, url)
-import Api.User as User exposing (storeUser)
+import Actions exposing (Action)
 import Array
-import Browser.Navigation as Nav
-import Date
-import Dict
-import Html exposing (Html, a, button, div, h2, input, text)
-import Html.Attributes exposing (checked, class, href, type_)
-import Html.Events exposing (onCheck, onClick)
-import Http as H
+import Color exposing (Color)
+import Date exposing (Date)
+import Effects exposing (Effect(..))
+import Html exposing (Html, a, button, div, h2, input, p, span, text)
+import Html.Attributes as Attributes exposing (class, classList, disabled, height, type_, value, width)
+import Html.Events exposing (onClick, onInput)
+import Material.Icons.Outlined as Outlined
+import Material.Icons.Types exposing (Coloring(..))
 import Pages.Workouts.ExerciseBuilder as Builder
 import Pages.Workouts.ExerciseEditor as Editor
-import Pages.Workouts.ExercisePageNavigation as Navigation
-import Pages.Workouts.ExerciseView exposing (viewExercise)
-import Pages.Workouts.Utils exposing (dateToString, nextDay, prevDay)
-import Pages.Workouts.WorkoutLogger as WorkoutLogger exposing (Msg(..))
-import Pages.Workouts.WorkoutsState exposing (NavbarSwipeDirection(..), WorkoutsPageState, addToSwapState, emptyState, formatDateWorkoutURL, isExposedEditButton, isLoggedOn, isToggled, removeFromSwapState, swapState, swappable, updateBuilder, updateEditor, updateExercise, updateLog, updateWorkout)
-import Set
-import StrengthSet exposing (LoggedStrengthExercise, asExercise)
+import Pages.Workouts.ExercisePageNavigation as Navigation exposing (NavAction(..))
+import Pages.Workouts.Utils exposing (dateToString, smallDateToString)
+import Pages.Workouts.WorkoutLogger as Logger exposing (Msg)
+import Pages.Workouts.WorkoutsState as State exposing (State)
+import StrengthSet exposing (LoggableStrengthExercise, LoggableStrengthSet, asExercise, getSetRanges)
+import Svg exposing (svg)
+import Svg.Attributes as SvgAttributes
 import Swiper
-import Task
 import Utils.Error as Error exposing (RequestError(..))
-import Utils.Log exposing (LogType(..), log)
+import Utils.Log exposing (LogLevel(..))
 import Utils.OrderedDict as OrderedDict exposing (OrderedDict)
-import Pages.Workouts.WorkoutsState exposing (removeExercise)
+import Utils.OverrideClick exposing (overrideOnClickWith)
 
 
 type Model
-    = Unauthenticated
-    | Authenticated WorkoutsPageState
-    | Loading WorkoutsPageState
+    = Loading Date
+    | Loaded State
 
 
-type FetchAction
-    = Workout (Task.Task RequestError (OrderedDict String LoggedStrengthExercise))
-    | Exercise String (Task.Task RequestError (Maybe LoggedStrengthExercise))
-    | User Nav.Key (Maybe Navigation.Action) (Task.Task RequestError AuthenticatedUser)
+loading : Date -> Model
+loading date =
+    Loading date
+
+
+render : Date -> OrderedDict String LoggableStrengthExercise -> Model
+render date workout =
+    State.new date workout
+        |> Loaded
+
+
+withState : (State -> State) -> Model -> Model
+withState update_ model =
+    case model of
+        Loading date ->
+            Loading date
+
+        Loaded state_ ->
+            update_ state_ |> Loaded
+
+
+updateState : (a -> State) -> ( a, b ) -> ( Model, b )
+updateState update_ tup =
+    tup
+        |> Tuple.mapFirst update_
+        |> Tuple.mapFirst Loaded
+
+
+updateState2 : (a -> State) -> ( a, b, c ) -> ( Model, b, c )
+updateState2 update_ ( a, b, c ) =
+    let
+        ( m, _ ) =
+            updateState update_ ( a, b )
+    in
+    ( m, b, c )
+
+
+dateOf : Model -> Date
+dateOf model =
+    case model of
+        Loading date ->
+            date
+
+        Loaded args ->
+            args
+                |> State.today
+
+
+
+-- Update --
 
 
 type Msg
-    = Editor Editor.EditorMessage
-    | FetchedWorkout (Result RequestError (OrderedDict String LoggedStrengthExercise))
-    | FetchedExercise String (Result RequestError (Maybe LoggedStrengthExercise))
-    | FetchedUser Nav.Key (Maybe Navigation.Action) (Result RequestError AuthenticatedUser)
-    | Builder Builder.Msg
-    | LogWorkout WorkoutLogger.Msg
-    | Navigate Navigation.Action
-    | SwapExerciseOrder String String
-    | AddToSwap String
-    | RemoveFromSwap String
-    | ClearSwap
-    | Fetch FetchAction
-    | NoOp
+    = Edit Editor.Msg
+    | Build Builder.Msg
+    | LogWorkout Logger.Msg
+    | Navigate Navigation.NavAction
+    | FetchedWorkout (OrderedDict String LoggableStrengthExercise)
+    | FetchedExercise String (Maybe LoggableStrengthExercise)
+    | Passthrough
 
 
-doFetch : FetchAction -> Cmd Msg
-doFetch action =
-    case action of
-        Workout getWorkout ->
-            Task.attempt FetchedWorkout getWorkout
-
-        User key next task ->
-            Task.attempt (FetchedUser key next) task
-
-        Exercise id getExercise ->
-            Task.attempt (FetchedExercise id) getExercise
+goToDate : Date -> Msg
+goToDate date =
+    date
+        |> Navigation.SelectDate
+        |> Navigate
 
 
-update : Msg -> Model -> ( Model, Cmd Msg )
+withNavError : String -> Msg
+withNavError errMsg =
+    errMsg
+        |> Navigation.ImproperSelection
+        |> Navigate
+
+
+update : Msg -> Model -> ( Model, List Effect, List Action )
 update msg model =
     case model of
-        Unauthenticated ->
+        Loading today ->
             case msg of
-                FetchedUser navKey nextAction result ->
-                    case result of
-                        Err err ->
-                            log Error ("Error fetching user: \n" ++ Error.toString err) model
-
-                        Ok user ->
-                            let
-                                ( page, action ) =
-                                    loadWorkoutsData (emptyState user navKey) nextAction
-                            in
-                            ( Loading page, Cmd.batch [ action, storeUser user ] )
+                FetchedWorkout workout ->
+                    render today workout
+                        |> Effects.none
+                        |> Actions.none
 
                 _ ->
-                    log Error "Must be logged in to do anything" model
+                    model
+                        |> Effects.withEffect (Log Error "Unexpected message to loading state")
+                        |> Actions.none
 
-        Authenticated page ->
+        Loaded state ->
             case msg of
-                Editor edit ->
-                    let
-                        getExercise =
-                            \id ->
-                                OrderedDict.get id page.workout
-                                    |> Maybe.map asExercise
+                Edit msg_ ->
+                    State.editor state
+                        |> Editor.update msg_
+                        |> updateState (State.updateEditor state)
+                        |> Actions.none
 
-                        editExercise =
-                            \id exercise ->
-                                Task.sequence [ page.api.editName page.today id exercise.name, page.api.editSets page.today id (Array.toList exercise.sets) ]
-                                    |> Task.attempt (Error.respond (\_ -> Editor.ClosedEditor) (\_ -> Editor.DoNothing))
-                                    |> Cmd.map Editor
+                Build msg_ ->
+                    State.builder state
+                        |> Builder.update msg_
+                        |> updateState (State.updateBuilder state)
+                        |> Actions.none
 
-                        deleteExercise =
-                            \id ->
-                                page.api.deleteExercise page.today id
-                                    |> Task.attempt (Error.respond (\_ -> Editor.ClosedEditor) (\_ -> Editor.DoNothing))
-                                    |> Cmd.map Editor
+                LogWorkout msg_ ->
+                    State.logger state
+                        |> Logger.update msg_
+                        |> updateState (State.updateLogger state)
+                        |> Actions.none
 
-                        ( edits, nextEdits ) =
-                            Editor.update
-                                { getExercise = getExercise
-                                , editExercise = editExercise
-                                , deleteExercise = deleteExercise
-                                , refreshExercise = refreshExercise page
-                                }
-                                edit
-                                page.editor
-                    in
-                    ( Authenticated <| updateEditor page edits, nextEdits )
+                Navigate msg_ ->
+                    state
+                        |> Navigation.navigatePage msg_
+                        |> updateState2 identity
 
-                FetchedWorkout result ->
-                    case result of
-                        Err error ->
-                            case error of
-                                Http (H.BadStatus 401) ->
-                                    let
-                                        user =
-                                            User.api url key
-                                    in
-                                    ( Unauthenticated
-                                    , user.refreshAuth page.user.refreshToken
-                                        |> Task.attempt (FetchedUser page.navKey (Just <| Navigation.LoadURL page.today))
-                                    )
+                FetchedWorkout workout ->
+                    model
+                        |> withState (State.updateWorkout workout)
+                        |> Effects.none
+                        |> Actions.none
 
-                                _ ->
-                                    log Error ("Encountered error fetching workout: \n" ++ Error.toString error) model
+                FetchedExercise exerciseId (Just exercise) ->
+                    model
+                        |> withState (State.updateExercise exerciseId exercise)
+                        |> Effects.none
+                        |> Actions.none
 
-                        Ok workout ->
-                            ( Authenticated <| updateWorkout page workout, Cmd.none )
+                FetchedExercise exerciseId Nothing ->
+                    model
+                        |> withState (State.deleteExercise exerciseId)
+                        |> Effects.none
+                        |> Actions.none
 
-                Builder build ->
-                    let
-                        createNew =
-                            \exercise ->
-                                page.api.insert page.today
-                                    { exercise = exercise
-                                    , order = List.length <| OrderedDict.keys page.workout
-                                    , day = Date.weekday page.today
-                                    }
-                                    |> Task.attempt (Error.respond (\_ -> Builder.Cleared) (\_ -> Builder.Invalid))
-                                    |> Cmd.map Builder
-                    in
-                    Builder.update { submit = createNew, refresh = page.api.getLoggedWorkouts page.today |> Workout |> doFetch } build page.creator
-                        |> Tuple.mapFirst (updateBuilder page)
-                        |> Tuple.mapFirst Authenticated
-
-                FetchedUser navKey navAction result ->
-                    case result of
-                        Err error ->
-                            log Error ("Fetch Error: " ++ Error.toString error) Unauthenticated
-
-                        Ok user ->
-                            let
-                                ( updatedState, nextAction ) =
-                                    loadWorkoutsData (emptyState user navKey) navAction
-                            in
-                            ( Authenticated updatedState, Cmd.batch [ nextAction, storeUser user ] )
-
-                Navigate directive ->
-                    loadWorkoutsData page (Just directive)
-                        |> Tuple.mapFirst Authenticated
-
-                LogWorkout logMsg ->
-                    let
-                        log =
-                            \id sets ->
-                                page.api.logExercise page.today id sets
-                                    |> Task.attempt (Error.respond (\_ -> WorkoutLogger.LoggedWorkout id) (\_ -> WorkoutLogger.FailedToLog))
-                                    |> Cmd.map LogWorkout
-                    in
-                    WorkoutLogger.update { log = log, refresh = refreshExercise page } logMsg page.log
-                        |> Tuple.mapFirst (updateLog page)
-                        |> Tuple.mapFirst Authenticated
-
-                NoOp ->
-                    log Info "Nothing todo" model
-
-                Fetch action ->
-                    ( Loading page, doFetch action )
-
-                FetchedExercise id result ->
-                    case result of
-                        Err err ->
-                            log Error (Error.toString err) model
-
-                        Ok exercise ->
-                            ( Maybe.map (updateExercise page id) exercise |> Maybe.withDefault (removeExercise page id) |> Authenticated, Cmd.none )
-
-                SwapExerciseOrder id1 id2 ->
-                    OrderedDict.swap id1 id2 page.workout
-                        |> updateWorkout page
-                        |> (\m ->
-                                { m | swapState = Set.empty }
-                                    |> Authenticated
-                                    |> (\s -> ( s, Task.attempt (\_ -> NoOp) (page.api.swapExercises page.today id1 id2) ))
-                           )
-
-                AddToSwap id ->
-                    if Set.size page.swapState >= 2 then
-                        ( model, Cmd.none )
-
-                    else
-                        ( addToSwapState page id |> Authenticated, Cmd.none )
-
-                RemoveFromSwap id ->
-                    ( removeFromSwapState page id |> Authenticated, Cmd.none )
-
-                ClearSwap ->
-                    ( { page | swapState = Set.empty, exposedEditButton = Set.empty } |> Authenticated, Cmd.none )
-
-        Loading page ->
-            update msg (Authenticated page)
-
-
-refreshExercise : WorkoutsPageState -> String -> Cmd Msg
-refreshExercise page id =
-    Exercise id (page.api.getExercise page.today id) |> doFetch
-
-
-loadWorkoutsData : WorkoutsPageState -> Maybe Navigation.Action -> ( WorkoutsPageState, Cmd Msg )
-loadWorkoutsData state directive =
-    case directive of
-        Just action ->
-            Navigation.navigatePage { parseWorkout = \task -> Workout task |> doFetch, openEditor = \id -> Task.succeed (Editor.Opened id) |> Task.perform Editor } action state
-
-        Nothing ->
-            ( state, Task.perform (\date -> Navigation.LoadURL date |> Navigate) Date.today )
-
-
-openWorkoutEditor : String -> Msg
-openWorkoutEditor id =
-    Editor.Opened id |> Editor
-
-
-expand : String -> Msg
-expand id =
-    Navigation.ExpandExercise id |> Navigate
-
-
-inputWeight : String -> Int -> String -> Msg
-inputWeight id setNumber weightString =
-    WeightRecorded id setNumber weightString |> LogWorkout
-
-
-inputReps : String -> Int -> String -> Msg
-inputReps id setNumber repsString =
-    RepsRecorded id setNumber repsString |> LogWorkout
-
-
-logWorkout : String -> Msg
-logWorkout id =
-    LogWorkout <| WorkoutLogger.RequestLogWorkout id
-
-
-reopenLog : String -> Msg
-reopenLog id =
-    LogWorkout <| WorkoutLogger.Relogging id
+                Passthrough ->
+                    model
+                        |> Effects.none
+                        |> Actions.none
 
 
 view : Model -> Html Msg
 view model =
     case model of
-        Unauthenticated ->
-            div [ class "min-h-screen justify-center w-full bg-gray-900 py-50" ]
-                [ h2 [ class "text-lg" ]
-                    [ text "Authentication issue!"
-                    ]
-                ]
-
-        Authenticated state ->
-            let
-                exercisesState =
-                    { expanded = isToggled state
-                    , isLoggedToday = isLoggedOn state.today state
-                    , getEnteredData =
-                        \id setNumber ->
-                            Dict.get id state.log
-                                |> Maybe.map (\d -> d.draft)
-                                |> Maybe.andThen (Array.get setNumber)
-                    , isEditorOpen = isExposedEditButton state
-                    , swapState = swapState state
-                    , isChecked = \id -> Set.member id state.swapState
-                    }
-
-                api =
-                    { onOpenWorkoutEditor = openWorkoutEditor
-                    , onToggle = expand
-                    , onWeightInput = inputWeight
-                    , onRepsInput = inputReps
-                    , onLogAction = logWorkout
-                    , onRelogAction = reopenLog
-                    , onSwipeExercise = \id event -> Navigation.SwipedExercise id event |> Navigate
-                    , addToSwap = AddToSwap
-                    , removeFromSwap = RemoveFromSwap
-                    , swapExercises = \a b -> SwapExerciseOrder a b
-                    }
-
-                exercises =
-                    state.workout
-                        |> OrderedDict.map (viewExercise exercisesState api)
-                        |> OrderedDict.values
-            in
-            div [ class "flex min-h-screen justify-center w-full bg-gray-900 sm:px-3 " ]
-                [ Editor.view state.editor |> Html.map Editor
-                , div [ class "w-screen text-blue-200" ]
-                    [ div []
-                        [ div (class "flex flex-row sm:justify-between justify-center border-b-2 border-blue-400 mb-3 p-2 pb-2" :: Swiper.onSwipeEvents (\e -> Navigation.SwipedNavbar e |> Navigate))
-                            [ a [ class "hidden sm:block my-auto hover:text-blue-400", href (prevDay state.today |> Pages.Workouts.WorkoutsState.formatDateWorkoutURL) ] [ text "< yesterday" ]
-                            , h2 [ class "text-4xl text-center" ]
-                                [ text (dateToString state.today) ]
-                            , a [ class "hidden sm:block my-auto hover:text-blue-400", href (nextDay state.today |> formatDateWorkoutURL) ] [ text "tomorrow >" ]
-                            ]
-                        , div [ class "overflow-y-scroll sm:mx-0 mx-1" ] exercises
-                        , input [ type_ "checkbox", class "opacity-0 h-0 absolute", onCheck (\_ -> Builder.Opened), checked state.creator.isOpen ] [] |> Html.map Builder
-                        , div
-                            [ class
-                                (if state.creator.isOpen then
-                                    "visible"
-
-                                 else
-                                    "hidden"
-                                )
-                            ]
-                            [ Builder.view state.creator ]
-                            |> Html.map Builder
-                        , swapButton (swapState state) state
-                        , div [ class "flex justify-center" ]
-                            [ button
-                                [ class "border-2 border-blue-400 w-24 rounded-md m-2 p-2 hover:bg-blue-400 w-11/12"
-                                , onClick
-                                    (if state.creator.isOpen then
-                                        Builder.Closed
-
-                                     else
-                                        Builder.Opened
-                                    )
-                                ]
-                                [ if state.creator.isOpen then
-                                    text "-"
-
-                                  else
-                                    text "+"
-                                ]
-                            ]
-                            |> Html.map Builder
-                        ]
-                    ]
-                ]
-
         Loading _ ->
             div [ class "min-h-screen justify-center w-full bg-gray-900 py-50" ]
                 [ h2 [ class "text-lg" ]
-                    [ text "Loading placeholder!!"
+                    [ text "Loading placeholder"
                     ]
                 ]
 
-
-swapButton : Bool -> WorkoutsPageState -> Html Msg
-swapButton swapState state =
-    Maybe.map
-        (\t ->
-            div [ class "flex justify-center" ]
-                [ button [ class "bg-blue-500 rounded-md", onClick (SwapExerciseOrder (Tuple.first t) (Tuple.second t)) ] [ text "Swap" ]
+        Loaded state ->
+            div [ class "flex min-h-screen justify-center w-full bg-gray-900 sm:px-3 " ]
+                [ state
+                    |> State.editor
+                    |> Editor.view
+                    |> Html.map Edit
+                , viewWorkout state
                 ]
-        )
-        (swappable state)
-        |> Maybe.withDefault
-            (if swapState then
-                div [ class "flex justify-center" ]
-                    [ button [ class "bg-red-500 rounded-md", onClick ClearSwap ] [ text "Exit Swap" ]
-                    ]
 
-             else
-                div [] []
-            )
+
+viewWorkout : State -> Html Msg
+viewWorkout state =
+    div (class "w-screen text-blue-200" :: (Swiper.onSwipeEvents Navigation.SwipedNavbar |> List.map (Attributes.map Navigate)))
+        [ div []
+            [ div (class "flex flex-row sm:justify-between justify-center mb-6 p-2 pb-2 mt-3" :: (Swiper.onSwipeEvents Navigation.SwipedNavbar |> List.map (Attributes.map Navigate)))
+                [ a [ class "hidden sm:block my-auto hover:text-blue-400" ] [ text "< yesterday" ]
+                , h2 [ class "text-4xl text-center" ]
+                    [ text (dateToString <| State.today state) ]
+                , a [ class "hidden sm:block my-auto hover:text-blue-400" ] [ text "tomorrow >" ]
+                ]
+            , div [ class "overflow-y-scroll sm:mx-0 mx-1 overflow-x-hidden" ]
+                (State.workout state
+                    |> OrderedDict.map (viewExercise state)
+                    |> OrderedDict.values
+                )
+            ]
+        ]
+
+
+viewExercise : State -> String -> LoggableStrengthExercise -> Html Msg
+viewExercise state exerciseId exercise =
+    let
+        ( weights, reps ) =
+            exercise
+                |> StrengthSet.sets
+                |> Array.map StrengthSet.todo
+                |> Array.toList
+                |> getSetRanges
+    in
+    div []
+        [ div
+            [ class "whitespace-nowrap overflow-x-scroll snap-x snap-mandatory h-22 exercise-container"
+            , onClick (Navigate <| Navigation.expand exerciseId)
+            ]
+            [ div [ class "w-screen inline-block h-20 snap-start align-middle" ]
+                [ div
+                    [ classList
+                        [ ( "mr-2 ml-1 h-full border-2 border-blue-400 rounded-t-md overflow-scroll", True )
+                        , ( "rounded-b-md", not <| State.isToggled exerciseId state )
+                        ]
+                    ]
+                    [ div [ class "flex my-auto whitespace-normal mx-3 mt-2" ]
+                        [ div [ class "text-xl font-bold text-blue-300 content-center" ]
+                            [ text <| StrengthSet.name exercise
+                            ]
+                        ]
+                    , div [ class "flex flex-row justify-between my-auto mx-3" ]
+                        [ div []
+                            [ span [ class "text-2xl" ]
+                                [ text (String.fromInt <| Array.length <| StrengthSet.sets exercise)
+                                ]
+                            , span [ class "text-xs" ]
+                                [ text "sets"
+                                ]
+                            ]
+                        , div []
+                            [ span [ class "text-2xl" ]
+                                [ text weights ]
+                            , span [ class "text-xs" ]
+                                [ text "lbs"
+                                ]
+                            ]
+                        , div []
+                            [ span [ class "text-2xl" ]
+                                [ text reps ]
+                            , span [ class "text-xs" ]
+                                [ text "reps"
+                                ]
+                            ]
+                        , div [ class "sm:block hidden px-2" ]
+                            [ div [ class "flex flex-row" ]
+                                [ button
+                                    [ type_ "button"
+                                    , class "border-2 border-red-400 rounded-md p-2 hover:bg-red-400"
+                                    , overrideOnClickWith (Editor.open exerciseId (asExercise exercise) (State.today state)) |> Attributes.map Edit
+                                    ]
+                                    [ text "Edit"
+                                    ]
+                                ]
+                            ]
+                        ]
+                    ]
+                ]
+            , editButton (Edit <| Editor.open exerciseId (asExercise exercise) (State.today state))
+            ]
+        , div
+            [ classList
+                [ ( "w-screen transition-[max-height] duration-300", True )
+                , ( "h-fit max-h-72 ease-out", State.isToggled exerciseId state )
+                , ( "max-h-0 overflow-hidden ease-out", not (State.isToggled exerciseId state) )
+                ]
+            ]
+            [ div [ class "max-h-72 border-b-2 border-x-2 rounded-b-md border-blue-400 mr-2 ml-1 overflow-scroll" ]
+                (Array.indexedMap (viewSet state exerciseId) (StrengthSet.sets exercise)
+                    |> Array.toList
+                )
+            ]
+        , div [ class "h-3" ] []
+        ]
+
+
+viewSet : State -> String -> Int -> LoggableStrengthSet -> Html Msg
+viewSet state exerciseId setNumber set =
+    div [ class "flex flex-row border-b border-blue-400 justify-between py-auto px-1 sm:px-2 py-1 h-20" ]
+        [ div [ class "flex justify-center my-auto mr-3 sm:block hidden" ]
+            [ h2 [ class "text-xl" ]
+                [ text (String.fromInt (setNumber + 1) ++ ".")
+                ]
+            ]
+        , div [ class "flex flex-row justify-around my-auto w-full" ]
+            [ div [ class "flex flex-row justify-between sm:mr-10 mr-5" ]
+                [ div [ class "flex flex-col justify-center" ]
+                    [ div [ class "hidden text-lg pb-1" ]
+                        [ text
+                            (State.logger state
+                                |> Logger.loggedSet exerciseId setNumber
+                                |> Maybe.map .weight
+                                |> Maybe.withDefault (String.fromFloat <| .weight <| StrengthSet.todo set)
+                            )
+                        , span [ class "text-xs" ] [ text "lbs" ]
+                        ]
+                    ]
+                , div [ class "ml-3 my-auto flex flex-col mr-3" ]
+                    [ div [ class "text-xs align-top" ] [ text "today(lbs):" ]
+                    , input
+                        [ type_ "string"
+                        , class "align-middle w-16 h-18 border rounded-md text-black"
+                        , value
+                            (State.logger state
+                                |> Logger.loggedSet exerciseId setNumber
+                                |> Maybe.map .weight
+                                |> Maybe.withDefault (String.fromFloat <| .weight <| StrengthSet.todo set)
+                            )
+                        , disabled
+                            (State.logger state
+                                |> Logger.isLogged exerciseId setNumber
+                            )
+                        , onInput (Logger.WeightRecorded exerciseId setNumber) |> Attributes.map LogWorkout
+                        ]
+                        []
+                    ]
+                , viewLastLoggedWeight set
+                ]
+            , div [ class "flex flex-row justify-between mr-1" ]
+                [ div [ class "my-auto flex flex-col mr-3" ]
+                    [ div [ class "text-xs align-top" ] [ text "today(rps):" ]
+                    , div [ class "flex flex-row jutify-between" ]
+                        [ input
+                            [ type_ "string"
+                            , class "align-middle w-16 h-18 border rounded-md text-black"
+                            , value
+                                (State.logger state
+                                    |> Logger.loggedSet exerciseId setNumber
+                                    |> Maybe.map .reps
+                                    |> Maybe.withDefault (String.fromInt <| .reps <| StrengthSet.todo set)
+                                )
+                            , disabled
+                                (State.logger state
+                                    |> Logger.isLogged exerciseId setNumber
+                                )
+                            , onInput (Logger.RepsRecorded exerciseId setNumber) |> Attributes.map LogWorkout
+                            ]
+                            []
+                        ]
+                    ]
+                , viewLastLoggedReps set
+                , if
+                    State.logger state
+                        |> Logger.isLogged exerciseId setNumber
+                  then
+                    unlogSetButton
+
+                  else
+                    logSetButton
+                ]
+            ]
+        ]
+
+
+viewLastLoggedWeight : LoggableStrengthSet -> Html msg
+viewLastLoggedWeight set_ =
+    case StrengthSet.lastLog set_ of
+        Nothing ->
+            div [ class "my-auto" ] [ p [ class "py-auto text-center text-xs" ] [ text "No prior log" ] ]
+
+        Just ( date, set ) ->
+            div
+                [ class "flex flex-col justify-items-center" ]
+                [ div [ class "text-xs align-top" ] [ text (smallDateToString date) ]
+                , div [ class "flex justify-center" ] [ text (String.fromFloat set.weight) ]
+                ]
+
+
+viewLastLoggedReps : LoggableStrengthSet -> Html msg
+viewLastLoggedReps set_ =
+    case StrengthSet.lastLog set_ of
+        Nothing ->
+            div [ class "my-auto" ] [ p [ class "py-auto text-center text-xs" ] [ text "No prior log" ] ]
+
+        Just ( date, set ) ->
+            div
+                [ class "flex flex-col justify-center" ]
+                [ div [ class "text-xs align-top" ] [ text (smallDateToString date) ]
+                , div [ class "flex justify-center" ] [ text (String.fromInt set.reps) ]
+                ]
+
+
+editButton : Msg -> Html Msg
+editButton openEditor =
+    div [ class "w-20 snap-start inline-block sm:hidden h-20 align-middle", onClick openEditor ]
+        [ div [ class "bg-red-700 text-gray-200 rounded-md h-full block" ]
+            [ div [ class "p-3.5 h-fit" ]
+                [ div [ class "flex flex-row justify-center" ]
+                    [ svg [ height 30, width 30, SvgAttributes.class "fill-gray-400" ]
+                        [ Outlined.edit_note 30 Inherit ]
+                    ]
+                , div [ class "flex flex-row justify-center text-sm" ] [ text "Edit" ]
+                ]
+            ]
+        ]
+
+
+logSetButton : Html msg
+logSetButton =
+    div [ class "my-auto fill-green-400 pl-4" ]
+        [ svg [ height 30, width 30 ]
+            [ Outlined.check_circle_outline 30 (Color <| Color.rgb255 74 222 128) ]
+        ]
+
+
+unlogSetButton : Html msg
+unlogSetButton =
+    div [ class "my-auto fill-green-400 pl-4" ]
+        [ svg [ height 30, width 30, SvgAttributes.class "fill-green-400" ]
+            [ Outlined.edit_note 30 (Color <| Color.rgb255 56 189 248) ]
+        ]

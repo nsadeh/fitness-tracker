@@ -2,6 +2,7 @@ module Utils.UpdateArray exposing (..)
 
 import Array exposing (Array)
 import Dict exposing (Dict)
+import Html.Attributes exposing (list)
 import Maybe exposing (withDefault)
 
 
@@ -18,3 +19,9 @@ upsertDict key map default dict =
 
         Nothing ->
             Dict.insert key default dict
+
+
+last : List a -> Maybe a
+last list =
+    List.drop (List.length list - 1) list 
+        |> List.head

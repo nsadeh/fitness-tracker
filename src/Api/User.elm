@@ -5,8 +5,7 @@ import Http as H
 import Json.Decode as D
 import Json.Encode as E
 import Platform exposing (Task)
-import Utils.Error exposing (RequestError(..))
-import Utils.Error exposing (responseResult)
+import Utils.Error exposing (RequestError(..), responseResult)
 
 
 
@@ -16,6 +15,7 @@ import Utils.Error exposing (responseResult)
 type alias API =
     { login : LoginInfo -> Task RequestError AuthenticatedUser
     , refreshAuth : String -> Task RequestError AuthenticatedUser
+    , changePassword : String -> String -> Task RequestError ()
     }
 
 
@@ -23,6 +23,7 @@ api : Url -> ApiKey -> API
 api url apiKey =
     { login = login url apiKey
     , refreshAuth = refresh url apiKey
+    , changePassword = \token password -> changePassword token url apiKey password
     }
 
 
@@ -57,6 +58,23 @@ refresh url key refreshToken =
         , resolver = H.stringResolver userResolver
         , timeout = Nothing
         }
+
+
+changePassword : String -> UnauthenticatedRequest String ()
+changePassword token =
+    \url key newPassword ->
+        H.task
+            { method = "PUT"
+            , headers =
+                [ H.header "apikey" key
+                , H.header "Content-type" "application/json"
+                , H.header "Authorization" ("Bearer " ++ token)
+                ]
+            , url = url ++ "/auth/v1/user"
+            , body = H.jsonBody (E.object <| List.singleton ( "password", E.string newPassword ))
+            , resolver = H.stringResolver <| \r -> Result.map (\_ -> ()) (responseResult r)
+            , timeout = Nothing
+            }
 
 
 

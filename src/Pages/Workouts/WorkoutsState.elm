@@ -1,201 +1,149 @@
-module Pages.Workouts.WorkoutsState exposing (..)
+module Pages.Workouts.WorkoutsState exposing
+    ( State
+    , builder
+    , deleteExercise
+    , editor
+    , isToggled
+    , logger
+    , new
+    , swipeState
+    , today
+    , toggle
+    , updateBuilder
+    , updateDate
+    , updateEditor
+    , updateExercise
+    , updateLogger
+    , updateSwipe
+    , updateWorkout
+    , workout
+    )
 
-import Api.Exercises as Exercises
-import Api.Supabase exposing (AuthenticatedUser, key, url)
-import Browser.Navigation as Nav
 import Date exposing (Date)
-import Dict exposing (Dict)
-import Pages.Workouts.ExerciseBuilder exposing (WorkoutBuilder, emptyForm)
-import Pages.Workouts.ExerciseEditor exposing (WorkoutEditor(..))
-import Pages.Workouts.WorkoutLogger as WorkoutLogger exposing (isRelogging)
+import Pages.Workouts.ExerciseBuilder as Builder
+import Pages.Workouts.ExerciseEditor as Editor
+import Pages.Workouts.WorkoutLogger as Logger
 import Set exposing (Set)
-import StrengthSet exposing (LoggableStrengthSets(..), LoggedStrengthExercise)
-import Swiper
-import Time
-import Url.Builder
+import StrengthSet exposing (LoggableStrengthSet(..), LoggableStrengthExercise)
+import Swiper exposing (SwipingState)
 import Utils.OrderedDict as OrderedDict exposing (OrderedDict)
 
 
-type alias WorkoutsPageState =
-    { api : Exercises.API
-    , user : AuthenticatedUser
-    , navKey : Nav.Key
-    , today : Date
-    , navbarSwipeState : Swiper.SwipingState
-    , editor : WorkoutEditor
-    , creator : WorkoutBuilder
-    , toggled : Set String
-    , workout : OrderedDict String LoggedStrengthExercise
-    , log : WorkoutLogger.Model
-    , exerciseSwipeState : Dict String Swiper.SwipingState
-    , exposedEditButton : Set String
-    , swapState : Set String
+type alias StateArgs =
+    { today : Date
+    , workout : OrderedDict String LoggableStrengthExercise
+    , editor : Editor.Model
+    , builder : Builder.Model
+    , logger : Logger.Model
+    , expanded : Set String
+    , swipe : SwipingState
     }
 
 
-type NavbarSwipeDirection
-    = Right
-    | Left
+type State
+    = State StateArgs
 
 
-emptyState : AuthenticatedUser -> Nav.Key -> WorkoutsPageState
-emptyState user navKey =
-    { api = Exercises.api url key user
-    , user = user
-    , workout = OrderedDict.empty
-    , toggled = Set.empty
-    , editor = Closed
-    , creator = emptyForm
-    , today = Date.fromCalendarDate 2022 Time.Jan 1
-    , navKey = navKey
-    , navbarSwipeState = Swiper.initialSwipingState
-    , log = Dict.empty
-    , exerciseSwipeState = Dict.empty
-    , exposedEditButton = Set.empty
-    , swapState = Set.empty
-    }
+
+-- Update state --
 
 
-refreshUser : WorkoutsPageState -> AuthenticatedUser -> WorkoutsPageState
-refreshUser state user =
-    { state | user = user, api = Exercises.api url key user }
+new : Date -> OrderedDict String LoggableStrengthExercise -> State
+new today_ workout_ =
+    State
+        { today = today_
+        , workout = workout_
+        , editor = Editor.closed
+        , builder = Builder.closed
+        , logger = Logger.new today_ workout_
+        , expanded = Set.empty
+        , swipe = Swiper.initialSwipingState
+        }
 
 
-updateExercise : WorkoutsPageState -> String -> LoggedStrengthExercise -> WorkoutsPageState
-updateExercise state id exercise =
-    OrderedDict.update id (Maybe.map (\_ -> exercise)) state.workout
-        |> updateWorkout state
-
-removeExercise : WorkoutsPageState -> String -> WorkoutsPageState
-removeExercise state id = OrderedDict.remove id state.workout
-    |> updateWorkout state
+updateWorkout : OrderedDict String LoggableStrengthExercise -> State -> State
+updateWorkout workout_ (State args) =
+    State { args | workout = workout_ }
 
 
-updateWorkout : WorkoutsPageState -> OrderedDict String LoggedStrengthExercise -> WorkoutsPageState
-updateWorkout state workout =
-    { state | workout = workout, log = WorkoutLogger.init state.today workout }
+updateExercise : String -> LoggableStrengthExercise -> State -> State
+updateExercise exerciseId exercise (State args) =
+    State { args | workout = OrderedDict.insert exerciseId exercise args.workout }
 
 
-updateDate : WorkoutsPageState -> Date -> WorkoutsPageState
-updateDate state date =
-    { state | today = date, workout = OrderedDict.empty }
+deleteExercise : String -> State -> State
+deleteExercise exerciseId (State args) =
+    State { args | workout = OrderedDict.remove exerciseId args.workout }
 
 
-updateBuilder : WorkoutsPageState -> WorkoutBuilder -> WorkoutsPageState
-updateBuilder state builder =
-    { state | creator = builder }
+updateDate : Date -> State -> State
+updateDate date (State args) =
+    State { args | today = date }
 
 
-updateEditor : WorkoutsPageState -> WorkoutEditor -> WorkoutsPageState
-updateEditor state editor =
-    { state | editor = editor }
+updateEditor : State -> Editor.Model -> State
+updateEditor (State args) editor_ =
+    State { args | editor = editor_ }
 
 
-updateLog : WorkoutsPageState -> WorkoutLogger.Model -> WorkoutsPageState
-updateLog state log =
-    { state | log = log }
+updateBuilder : State -> Builder.Model -> State
+updateBuilder (State args) builder_ =
+    State { args | builder = builder_ }
 
 
-isToggled : WorkoutsPageState -> String -> Bool
-isToggled state id =
-    Set.member id state.toggled
+updateLogger : State -> Logger.Model -> State
+updateLogger (State args) logger_ =
+    State { args | logger = logger_ }
 
 
-toggle : WorkoutsPageState -> String -> WorkoutsPageState
-toggle state id =
-    if isToggled state id then
-        { state | toggled = Set.remove id state.toggled }
+updateSwipe : Swiper.SwipingState -> State -> State
+updateSwipe swipe (State args) =
+    State { args | swipe = swipe }
+
+
+toggle : String -> State -> State
+toggle exerciseId (State args) =
+    if Set.member exerciseId args.expanded then
+        State { args | expanded = Set.remove exerciseId args.expanded }
 
     else
-        { state | toggled = Set.insert id state.toggled }
+        State { args | expanded = Set.insert exerciseId args.expanded }
 
 
-handleNavbarSwipe : WorkoutsPageState -> Swiper.SwipeEvent -> ( WorkoutsPageState, Maybe NavbarSwipeDirection )
-handleNavbarSwipe state event =
-    let
-        ( _, swipedLeft ) =
-            Swiper.hasSwipedLeft event state.navbarSwipeState
 
-        ( nextState, swipedRight ) =
-            Swiper.hasSwipedRight event state.navbarSwipeState
-    in
-    ( { state | navbarSwipeState = nextState }
-    , if swipedRight then
-        Just Right
-
-      else if swipedLeft then
-        Just Left
-
-      else
-        Nothing
-    )
+-- Get state --
 
 
-changeWorkoutURL : WorkoutsPageState -> Date -> Cmd msg
-changeWorkoutURL state date =
-    Nav.pushUrl state.navKey <| formatDateWorkoutURL date
+today : State -> Date
+today (State args) =
+    args.today
 
 
-formatDateWorkoutURL : Date -> String
-formatDateWorkoutURL date =
-    Url.Builder.absolute [ "workout" ] [ Url.Builder.string "date" (Date.toIsoString date) ]
+workout : State -> OrderedDict String LoggableStrengthExercise
+workout (State args) =
+    args.workout
 
 
-isLoggedOn : Date -> WorkoutsPageState -> String -> Bool
-isLoggedOn date state id =
-    if isRelogging state.log id then
-        False
-
-    else
-        OrderedDict.get id state.workout
-            |> Maybe.map
-                (\w ->
-                    case w.sets of
-                        Unlogged _ ->
-                            False
-
-                        Logged { loggedOn } ->
-                            date == loggedOn
-                )
-            |> Maybe.withDefault False
+editor : State -> Editor.Model
+editor (State args) =
+    args.editor
 
 
-exposeEditButton : WorkoutsPageState -> String -> WorkoutsPageState
-exposeEditButton state id =
-    { state | exposedEditButton = Set.insert id state.exposedEditButton }
+builder : State -> Builder.Model
+builder (State args) =
+    args.builder
 
 
-hideEditButton : WorkoutsPageState -> String -> WorkoutsPageState
-hideEditButton state id =
-    { state | exposedEditButton = Set.remove id state.exposedEditButton }
+logger : State -> Logger.Model
+logger (State args) =
+    args.logger
 
 
-isExposedEditButton : WorkoutsPageState -> String -> Bool
-isExposedEditButton state id =
-    Set.member id state.exposedEditButton
+isToggled : String -> State -> Bool
+isToggled exerciseId (State args) =
+    Set.member exerciseId args.expanded
 
 
-swapState : WorkoutsPageState -> Bool
-swapState state =
-    Set.size state.exposedEditButton == 2
-
-
-addToSwapState : WorkoutsPageState -> String -> WorkoutsPageState
-addToSwapState state id =
-    { state | swapState = Set.insert id state.swapState }
-
-
-removeFromSwapState : WorkoutsPageState -> String -> WorkoutsPageState
-removeFromSwapState state id =
-    { state | swapState = Set.remove id state.swapState }
-
-
-swappable : WorkoutsPageState -> Maybe ( String, String )
-swappable state =
-    let
-        ( ma, mb ) =
-            Set.toList state.swapState
-                |> List.take 2
-                |> (\l -> ( List.head l, Maybe.andThen List.head <| List.tail l ))
-    in
-    Maybe.map2 (\x y -> (x, y) ) ma mb
+swipeState : State -> Swiper.SwipingState
+swipeState (State args) =
+    args.swipe

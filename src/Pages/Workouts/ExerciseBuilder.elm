@@ -1,61 +1,55 @@
-module Pages.Workouts.ExerciseBuilder exposing (..)
+module Pages.Workouts.ExerciseBuilder exposing (Model, Msg(..), closed, open, update, view)
 
 import Array exposing (Array)
+import Date exposing (Date)
 import Dict exposing (Dict)
+import Effects as Effects exposing (Effect(..))
 import Html exposing (Html, button, div, form, h4, input, text)
-import Html.Attributes exposing (class, placeholder, type_, value)
+import Html.Attributes exposing (class, maxlength, placeholder, type_, value)
 import Html.Events exposing (onClick, onInput)
 import Maybe
-import StrengthSet exposing (StrengthExercise, StrengthSet)
+import StrengthSet exposing (StrengthExercise, StrengthSet, removeSet)
 import Time exposing (Month(..))
-import Utils.Log exposing (LogType(..), log)
-import Html.Attributes exposing (maxlength)
+import Utils.Log exposing (LogLevel(..))
 
 
-type alias WorkoutBuilder =
-    { isOpen : Bool
-    , name : String
-    , numSets : Int
-    , sets : Dict Int { reps : String, weight : String }
-    }
+type alias BuilderArgs =
+    { name : String, numSets : Int, sets : Dict Int { reps : String, weight : String }, date : Date, order : Int }
 
 
-
--- FUNCTIONS --
-
-
-emptyForm : WorkoutBuilder
-emptyForm =
-    { isOpen = False
-    , name = ""
-    , numSets = 0
-    , sets = Dict.empty
-    }
+type Model
+    = Closed
+    | Open BuilderArgs
 
 
-toggleCreator : WorkoutBuilder -> WorkoutBuilder
-toggleCreator creator =
-    { creator | isOpen = not creator.isOpen }
+closed : Model
+closed =
+    Closed
 
 
-updateWeight : WorkoutBuilder -> Int -> String -> WorkoutBuilder
-updateWeight builder index weight =
-    case Dict.get index builder.sets of
-        Nothing ->
-            { builder | sets = Dict.insert index { reps = "0", weight = weight } builder.sets }
-
-        Just set ->
-            { builder | sets = Dict.insert index { reps = set.reps, weight = weight } builder.sets }
+open : Date -> Int -> Model
+open date order =
+    Open { name = "", numSets = 0, sets = Dict.empty, date = date, order = order }
 
 
-updateReps : WorkoutBuilder -> Int -> String -> WorkoutBuilder
-updateReps builder index reps =
-    case Dict.get index builder.sets of
-        Nothing ->
-            { builder | sets = Dict.insert index { reps = reps, weight = "0" } builder.sets }
+clear : Model -> Model
+clear model =
+    updateData (\args -> { args | numSets = 0, name = "", sets = Dict.empty }) model
 
-        Just set ->
-            { builder | sets = Dict.insert index { reps = reps, weight = set.weight } builder.sets }
+
+updateSetNumber : Int -> BuilderArgs -> BuilderArgs
+updateSetNumber setNumber args =
+    { args | numSets = setNumber }
+
+
+updateData : (BuilderArgs -> BuilderArgs) -> Model -> Model
+updateData updateF model =
+    case model of
+        Closed ->
+            Closed
+
+        Open args ->
+            Open <| updateF args
 
 
 isValidSet : { reps : String, weight : String } -> Maybe StrengthSet
@@ -75,11 +69,54 @@ parse entries =
         |> List.foldl reducer (Just Array.empty)
 
 
-submitExercise : WorkoutBuilder -> Msg
-submitExercise builder =
-    Maybe.map (\sets -> { name = builder.name, sets = sets }) (parse builder.sets)
-        |> Maybe.map CreateSubmitted
+submit : BuilderArgs -> Msg
+submit args =
+    Maybe.map (\sets -> { name = args.name, sets = sets }) (parse args.sets)
+        |> Maybe.map (Submitted args.date args.order)
         |> Maybe.withDefault Invalid
+
+
+addSet : Model -> Model
+addSet model =
+    updateData (\args -> { args | numSets = args.numSets + 1 }) model
+
+
+removeSet : Int -> Model -> Model
+removeSet setNumber model =
+    updateData (\args -> { args | numSets = args.numSets - 1, sets = Dict.remove setNumber args.sets }) model
+
+
+updateName : String -> Model -> Model
+updateName newName model =
+    updateData (\args -> { args | name = newName }) model
+
+
+updateWeight : Int -> String -> Model -> Model
+updateWeight setNumber weightString model =
+    updateData
+        (\args ->
+            case Dict.get setNumber args.sets of
+                Nothing ->
+                    { args | sets = Dict.insert setNumber { reps = "0", weight = weightString } args.sets }
+
+                Just set ->
+                    { args | sets = Dict.insert setNumber { reps = set.reps, weight = weightString } args.sets }
+        )
+        model
+
+
+updateReps : Int -> String -> Model -> Model
+updateReps setNumber repsString model =
+    updateData
+        (\args ->
+            case Dict.get setNumber args.sets of
+                Nothing ->
+                    { args | sets = Dict.insert setNumber { reps = repsString, weight = "0.0" } args.sets }
+
+                Just set ->
+                    { args | sets = Dict.insert setNumber { reps = repsString, weight = set.weight } args.sets }
+        )
+        model
 
 
 
@@ -87,8 +124,8 @@ submitExercise builder =
 
 
 type Msg
-    = Opened
-    | Closed
+    = Opened Date Int
+    | Close
     | Cleared
     | SetAdded
     | SetRemoved Int
@@ -96,49 +133,76 @@ type Msg
     | ChangedName String
     | UpdatedWeight Int String
     | UpdatedReps Int String
-    | CreateSubmitted StrengthExercise
+    | Submitted Date Int StrengthExercise
     | Invalid
 
 
-update : { submit : StrengthExercise -> Cmd msg, refresh : Cmd msg } -> Msg -> WorkoutBuilder -> ( WorkoutBuilder, Cmd msg )
-update { submit, refresh } msg model =
+update : Msg -> Model -> ( Model, List Effect )
+update msg model =
     case msg of
-        Opened ->
-            ( { model | isOpen = True }, Cmd.none )
+        Opened date order ->
+            open date order
+                |> Effects.none
 
-        Closed ->
-            ( { model | isOpen = False }, refresh )
+        Close ->
+            closed
+                |> Effects.none
 
         Cleared ->
-            ( emptyForm, refresh )
-
-        ChangedName name ->
-            ( { model | name = name }, Cmd.none )
-
-        UpdatedWeight index weight ->
-            ( updateWeight model index weight, Cmd.none )
-
-        UpdatedReps index reps ->
-            ( updateReps model index reps, Cmd.none )
-
-        CreateSubmitted exercise ->
-            ( emptyForm, submit exercise )
+            model
+                |> clear
+                |> Effects.none
 
         SetAdded ->
-            ( { model | numSets = model.numSets + 1 }, Cmd.none )
+            model
+                |> addSet
+                |> Effects.none
 
-        SetRemoved index ->
-            ( { model | numSets = model.numSets - 1, sets = Dict.remove index model.sets }, Cmd.none )
+        SetRemoved setNumber ->
+            model
+                |> removeSet setNumber
+                |> Effects.none
 
-        NumSetsEntered numSets ->
-            ( { model | numSets = numSets }, Cmd.none )
+        NumSetsEntered setNumber ->
+            updateData (updateSetNumber setNumber) model
+                |> Effects.none
+
+        ChangedName newName ->
+            model
+                |> updateName newName
+                |> Effects.none
+
+        UpdatedWeight setNumber weight ->
+            model
+                |> updateWeight setNumber weight
+                |> Effects.none
+
+        UpdatedReps setNumber reps ->
+            model
+                |> updateReps setNumber reps
+                |> Effects.none
+
+        Submitted date order exercise ->
+            model
+                |> Effects.withEffect (CreateExercise date exercise order)
 
         Invalid ->
-            log Error "Not implemented Builder.Invalid" model
+            model
+                |> Effects.withEffect (Log Error "Invalid exercise builder action")
 
 
-view : WorkoutBuilder -> Html Msg
-view builder =
+view : Model -> Html Msg
+view model =
+    case model of
+        Closed ->
+            div [] []
+
+        Open args ->
+            viewArgs args
+
+
+viewArgs : BuilderArgs -> Html Msg
+viewArgs builder =
     div []
         [ div [ class "flex flex-col mx-1 h-fit border border-blue-400 rounded-md max-h-56" ]
             [ div [ class "flex sm:flex-row flex-col sm:justify-around justify-center sm:h-16 h-fit sm:pl-0 w-full" ]
@@ -171,14 +235,14 @@ view builder =
                 ]
             , div [] [ viewSetForm builder ]
             , div [ class "flex justify-center" ]
-                [ button [ class "border-2 border-blue-400 w-30 rounded-md mt-1 mb-3 p-2 hover:bg-blue-400", onClick (submitExercise builder) ]
+                [ button [ class "border-2 border-blue-400 w-30 rounded-md mt-1 mb-3 p-2 hover:bg-blue-400", onClick (submit builder) ]
                     [ text "Create set!" ]
                 ]
             ]
         ]
 
 
-viewSetForm : WorkoutBuilder -> Html Msg
+viewSetForm : BuilderArgs -> Html Msg
 viewSetForm form =
     div [ class "flex flex-col overflow-y-scroll overflow-x-hidden" ] (List.range 1 form.numSets |> List.map viewFormSingleSet)
 

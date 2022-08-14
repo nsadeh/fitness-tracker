@@ -3,6 +3,6 @@
 @tailwind utilities;
 @tailwind screens;
 
-.exercise-panel::-webkit-scrollbar {
+.exercise-container::-webkit-scrollbar {
   display: none;
 }

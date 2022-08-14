@@ -4,7 +4,6 @@ import Array exposing (Array)
 import Date exposing (Date)
 import Json.Decode as D
 import Json.Encode as E
-import Pages.Workouts.Utils exposing (padLists)
 
 
 type alias StrengthSet =
@@ -19,22 +18,57 @@ type alias StrengthExercise =
     }
 
 
-type alias LoggedStrenghtSet =
-    { todo : StrengthSet
-    , logged : Maybe ( Date, StrengthSet )
+type LoggableStrengthSet
+    = Unlogged StrengthSet
+    | Logged StrengthSet Date StrengthSet
+
+
+type LoggableStrengthExercise
+    = LoggableStrengthExercise { name : String, sets : Array LoggableStrengthSet }
+
+
+make : String -> Array LoggableStrengthSet -> LoggableStrengthExercise
+make name_ sets_ =
+    LoggableStrengthExercise { name = name_, sets = sets_ }
+
+
+sets : LoggableStrengthExercise -> Array LoggableStrengthSet
+sets (LoggableStrengthExercise args) =
+    args.sets
+
+
+name : LoggableStrengthExercise -> String
+name (LoggableStrengthExercise args) =
+    args.name
+
+
+asExercise : LoggableStrengthExercise -> StrengthExercise
+asExercise exercise =
+    { name = name exercise
+    , sets =
+        sets exercise
+            |> Array.map todo
     }
 
 
-type alias LoggedStrengthExercise =
-    { name : String
-    , sets : LoggableStrengthSets
-    , loggedOn : Maybe Date
-    }
+lastLog : LoggableStrengthSet -> Maybe ( Date, StrengthSet )
+lastLog set =
+    case set of
+        Unlogged _ ->
+            Nothing
+
+        Logged _ on done ->
+            Just ( on, done )
 
 
-type LoggableStrengthSets
-    = Unlogged { todo : Array StrengthSet }
-    | Logged { loggedOn : Date, sets : Array { todo : StrengthSet, logged : StrengthSet } }
+todo : LoggableStrengthSet -> StrengthSet
+todo set =
+    case set of
+        Unlogged todo_ ->
+            todo_
+
+        Logged todo_ _ _ ->
+            todo_
 
 
 emptySet : StrengthSet
@@ -49,50 +83,14 @@ emptyExercise =
     }
 
 
-emptyLoggedExercise : LoggedStrengthExercise
-emptyLoggedExercise =
-    { name = ""
-    , sets = Unlogged { todo = Array.empty }
-    , loggedOn = Nothing
-    }
+updateSets : Array LoggableStrengthSet -> LoggableStrengthExercise -> LoggableStrengthExercise
+updateSets sets_ (LoggableStrengthExercise args) =
+    LoggableStrengthExercise { args | sets = sets_ }
 
 
-logSetsInExercise : Date -> List StrengthSet -> LoggedStrengthExercise -> LoggedStrengthExercise
-logSetsInExercise date sets exercise =
-    let
-        updatedSets =
-            case exercise.sets of
-                Unlogged { todo } ->
-                    Logged { loggedOn = date, sets = List.map2 (\t s -> { todo = t, logged = s }) (Array.toList todo) sets |> Array.fromList }
-
-                Logged logged ->
-                    logSetsInExercise date sets { name = exercise.name, sets = Unlogged { todo = Array.map (\t -> t.todo) logged.sets }, loggedOn = exercise.loggedOn }
-                        |> (\ex -> ex.sets)
-    in
-    { exercise | loggedOn = Just date, sets = updatedSets }
-
-
-logSet : Date -> StrengthSet -> LoggedStrenghtSet -> LoggedStrenghtSet
-logSet onDate set lset =
-    { lset | logged = Just ( onDate, set ) }
-
-
-markAsLogged : StrengthSet -> LoggedStrenghtSet
-markAsLogged set =
-    { todo = set, logged = Nothing }
-
-
-asExercise : LoggedStrengthExercise -> StrengthExercise
-asExercise logged =
-    { name = logged.name
-    , sets =
-        case logged.sets of
-            Unlogged { todo } ->
-                todo
-
-            Logged { sets } ->
-                Array.map (\set -> set.todo) sets
-    }
+asLoggable : StrengthSet -> LoggableStrengthSet
+asLoggable set =
+    Unlogged set
 
 
 changeRepCount : Int -> StrengthSet -> StrengthSet
@@ -139,28 +137,28 @@ changeWeightForExercise index weight exercise =
     { exercise | sets = updatedSet }
 
 
-editTodoSets : List StrengthSet -> LoggedStrengthExercise -> LoggedStrengthExercise
-editTodoSets newSets exercise =
-    case exercise.sets of
-        Unlogged _ ->
-            { exercise | sets = Unlogged { todo = newSets |> Array.fromList } }
 
-        Logged { sets, loggedOn } ->
-            let
-                ll =
-                    Array.map (\s -> s.logged) sets |> Array.toList
+logSet : Int -> Date -> StrengthSet -> LoggableStrengthExercise -> LoggableStrengthExercise
+logSet setNumber on set_ (LoggableStrengthExercise args) =
+    args.sets
+        |> Array.get setNumber
+        |> Maybe.map (markSetLogged on set_)
+        |> Maybe.map (\set -> Array.set setNumber set args.sets)
+        |> Maybe.withDefault args.sets
+        |> (\set -> updateSets set (LoggableStrengthExercise args))
 
-                ( todos, loggeds ) =
-                    padLists newSets ll emptySet emptySet
 
-                updatedSets =
-                    Logged
-                        { loggedOn = loggedOn
-                        , sets = List.map2 (\todo logged -> { todo = todo, logged = logged }) todos loggeds |> Array.fromList
-                        }
-            in
-            { exercise | sets = updatedSets }
+markSetLogged : Date -> StrengthSet -> LoggableStrengthSet -> LoggableStrengthSet
+markSetLogged on logged set_ =
+    case set_ of
+        Unlogged todo_ ->
+            Logged todo_ on logged
 
+        Logged todo_ _ _ ->
+            Logged todo_ on logged
+
+withName: String -> LoggableStrengthExercise -> LoggableStrengthExercise
+withName name_ (LoggableStrengthExercise args) = LoggableStrengthExercise { args | name = name_ }
 
 
 -- Encoders/Decoders
@@ -217,23 +215,14 @@ removeSet index exercise =
     { exercise | sets = List.append before after |> Array.fromList }
 
 
-numSets : LoggableStrengthSets -> Int
-numSets s =
-    case s of
-        Unlogged { todo } ->
-            Array.length todo
-
-        Logged { sets } ->
-            Array.length sets
-
 getSetRanges : List StrengthSet -> ( String, String )
-getSetRanges sets =
+getSetRanges sets_ =
     let
         repsOnly =
-            List.map (\set -> set.reps) sets
+            List.map (\set -> set.reps) sets_
 
         weightsOnly =
-            List.map (\set -> set.weight) sets
+            List.map (\set -> set.weight) sets_
 
         minReps =
             List.minimum repsOnly |> Maybe.withDefault 0

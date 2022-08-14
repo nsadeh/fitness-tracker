@@ -46,6 +46,7 @@
     "promise": "8.1.0",
     "react-dev-utils": "6.1.1",
     "react-error-overlay": "4.0.1",
+    "run-when-changed": "^2.1.0",
     "sockjs-client": "1.4.0",
     "string-replace-loader": "2.3.0",
     "strip-ansi": "6.0.0",
@@ -58,5 +59,8 @@
     "webpack-manifest-plugin": "2.2.0",
     "whatwg-fetch": "3.5.0",
     "workbox-webpack-plugin": "4.3.1"
+  },
+  "dependencies": {
+    "watch": "^1.0.2"
   }
 }

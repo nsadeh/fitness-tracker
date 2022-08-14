@@ -1,6 +1,7 @@
 module Api.Exercises exposing (API, DeleteExerciseRequest, InsertPayload, LogSetRequest, api)
 
 import Api.Supabase exposing (ApiKey, AuthenticatedRequest, AuthenticatedUser, Url)
+import Array
 import Date exposing (Date, Weekday, numberToWeekday, weekdayToNumber)
 import Http as H
 import Json.Decode as D
@@ -9,11 +10,11 @@ import Json.Encode as E
 import Pages.Workouts.ExerciseBuilder exposing (Msg(..))
 import Platform exposing (Task)
 import Result as Result
-import StrengthSet exposing (LoggableStrengthSets(..), LoggedStrengthExercise, StrengthExercise, StrengthSet, decodeExercise, decodeSet, editTodoSets, encodeExercise, encodeSet, logSetsInExercise)
+import StrengthSet as Strength exposing (LoggableStrengthExercise, StrengthExercise, StrengthSet, decodeExercise, decodeSet, encodeExercise, encodeSet)
 import Task
 import Time
 import Utils.Error exposing (RequestError(..), responseResult)
-import Utils.Log exposing (LogType(..))
+import Utils.Log exposing (LogLevel(..))
 import Utils.OrderedDict exposing (OrderedDict, empty, filter, insert, map, remove, swap, update)
 
 
@@ -27,14 +28,14 @@ type alias ExerciseId =
 
 
 type alias API =
-    { getLoggedWorkouts : Date -> Task RequestError (OrderedDict String LoggedStrengthExercise)
+    { getLoggedWorkouts : Date -> Task RequestError (OrderedDict String LoggableStrengthExercise)
     , insert : Date -> InsertPayload -> Task RequestError ()
     , logSet : ExerciseId -> Date -> Int -> StrengthSet -> Task RequestError ()
     , logExercise : Date -> ExerciseId -> List StrengthSet -> Task RequestError ()
     , deleteExercise : Date -> ExerciseId -> Task RequestError ()
     , editSets : Date -> ExerciseId -> List StrengthSet -> Task RequestError ()
     , editName : Date -> ExerciseId -> String -> Task RequestError ()
-    , getExercise : Date -> ExerciseId -> Task RequestError (Maybe LoggedStrengthExercise)
+    , getExercise : Date -> ExerciseId -> Task RequestError (Maybe LoggableStrengthExercise)
     , swapExercises : Date -> ExerciseId -> ExerciseId -> Task RequestError ()
     }
 
@@ -72,7 +73,7 @@ getToday parser url key user date =
         |> mapTaskResult (map (\_ tuple -> Tuple.second tuple))
 
 
-getExerciseByID : (JournalRow -> Maybe LoggedStrengthExercise -> Maybe LoggedStrengthExercise) -> AuthenticatedRequest { date : Date, id : ExerciseId } (Maybe LoggedStrengthExercise)
+getExerciseByID : (JournalRow -> Maybe LoggableStrengthExercise -> Maybe LoggableStrengthExercise) -> AuthenticatedRequest { date : Date, id : ExerciseId } (Maybe LoggableStrengthExercise)
 getExerciseByID reducer url key user { date, id } =
     getJournalForID url key user { date = date, id = id }
         |> mapTaskResult (List.foldl reducer Nothing)
@@ -164,35 +165,15 @@ insertJournalEntry url key user ( id, action ) =
         }
 
 
-
--- foldRow : JournalRow -> OrderedDict String ( Int, StrengthExercise ) -> OrderedDict String ( Int, StrengthExercise )
--- foldRow row workouts =
---     case row.action of
---         Insert request ->
---             insert row.exerciseId ( weekdayToNumber request.day, request.exercise ) workouts
---         LogSet _ ->
---             workouts
---         Delete _ ->
---             remove row.exerciseId workouts
---         Edit changeRequest ->
---             case changeRequest of
---                 ChangeName name ->
---                     update row.exerciseId (Maybe.map (\( day, exercise ) -> ( day, { exercise | name = name } ))) workouts
---                 ChangeSetsAndReps sets ->
---                     update row.exerciseId (Maybe.map (\( day, exercise ) -> ( day, { exercise | sets = Array.fromList sets } ))) workouts
---         LogExercise { loggedOn, sets } ->
---             log Info "not implemented"
-
-
-foldLoggedRowForExercise : JournalRow -> Maybe LoggedStrengthExercise -> Maybe LoggedStrengthExercise
+foldLoggedRowForExercise : JournalRow -> Maybe LoggableStrengthExercise -> Maybe LoggableStrengthExercise
 foldLoggedRowForExercise row exercise =
     case ( exercise, row.action ) of
         ( Nothing, Insert _ insert ) ->
-            Just
-                { name = insert.exercise.name
-                , sets = Unlogged { todo = insert.exercise.sets }
-                , loggedOn = Nothing
-                }
+            Strength.make insert.exercise.name
+                (insert.exercise.sets
+                    |> Array.map Strength.asLoggable
+                )
+                |> Just
 
         ( Nothing, _ ) ->
             Nothing
@@ -205,8 +186,8 @@ foldLoggedRowForExercise row exercise =
                 Insert _ _ ->
                     Just ex
 
-                LogExercise date sets ->
-                    logSetsInExercise date sets ex |> Just
+                LogExercise _ _ ->
+                    Just ex
 
                 Delete _ ->
                     Nothing
@@ -214,25 +195,29 @@ foldLoggedRowForExercise row exercise =
                 Edit _ edit ->
                     case edit of
                         ChangeName name ->
-                            Just { ex | name = name }
+                            ex
+                                |> Strength.withName name
+                                |> Just
 
                         ChangeSetsAndReps sets ->
-                            editTodoSets sets ex |> Just
+                            ex
+                                |> Strength.updateSets (List.map Strength.asLoggable sets |> Array.fromList)
+                                |> Just
 
                 SwapExercises _ _ ->
                     Just ex
 
 
-foldLoggedRow : JournalRow -> OrderedDict String ( Int, LoggedStrengthExercise ) -> OrderedDict String ( Int, LoggedStrengthExercise )
+foldLoggedRow : JournalRow -> OrderedDict String ( Int, LoggableStrengthExercise ) -> OrderedDict String ( Int, LoggableStrengthExercise )
 foldLoggedRow row workouts =
     case row.action of
         Insert _ insertRequest ->
             let
                 exercise =
-                    { name = insertRequest.exercise.name
-                    , sets = Unlogged { todo = insertRequest.exercise.sets }
-                    , loggedOn = Nothing
-                    }
+                    Strength.make insertRequest.exercise.name
+                        (insertRequest.exercise.sets
+                            |> Array.map Strength.asLoggable
+                        )
             in
             insert row.exerciseId ( weekdayToNumber insertRequest.day, exercise ) workouts
 
@@ -246,18 +231,18 @@ foldLoggedRow row workouts =
         Edit _ cr ->
             case cr of
                 ChangeName name ->
-                    update row.exerciseId (Tuple.mapSecond (\ex -> { ex | name = name }) |> Maybe.map) workouts
+                    update row.exerciseId (Tuple.mapSecond (Strength.withName name) |> Maybe.map) workouts
 
                 ChangeSetsAndReps newSets ->
                     update row.exerciseId
                         (Maybe.map <|
                             Tuple.mapSecond
-                                (editTodoSets newSets)
+                                (Strength.updateSets (List.map Strength.asLoggable newSets |> Array.fromList))
                         )
                         workouts
 
-        LogExercise loggedOn sets ->
-            update row.exerciseId (Maybe.map <| Tuple.mapSecond <| logSetsInExercise loggedOn sets) workouts
+        LogExercise _ _ ->
+            workouts
 
         SwapExercises _ b ->
             swap row.exerciseId b workouts
@@ -353,7 +338,8 @@ decodePayload date action =
         "LogExercise" ->
             D.map (LogExercise date) (D.field "sets" (D.list decodeSet))
 
-        "SwapExercise" -> D.map (SwapExercises date) (D.field "with" D.string)
+        "SwapExercise" ->
+            D.map (SwapExercises date) (D.field "with" D.string)
 
         _ ->
             D.fail ("Failed to decode this action: " ++ action)
