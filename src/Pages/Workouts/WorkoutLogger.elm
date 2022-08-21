@@ -86,7 +86,8 @@ markLoggedLog setNumber logged current =
 type Msg
     = RepsRecorded String Int String
     | WeightRecorded String Int String
-    | SubmitLog String
+    | SubmitWorkoutLog String
+    | SubmitSetLog String Int
     | LoggedSet String Int
     | FailedToLog
     | CancelLog String Int
@@ -105,7 +106,7 @@ update msg model =
                 |> updateLog Weight exerciseId setNumber weightString
                 |> Effects.none
 
-        SubmitLog exerciseId ->
+        SubmitWorkoutLog exerciseId ->
             model
                 |> (toExercise exerciseId model
                         |> Maybe.map Array.toList
@@ -127,6 +128,16 @@ update msg model =
             model
                 |> markLogged exerciseId setNumber False
                 |> Effects.none
+
+        SubmitSetLog exerciseId setNumber ->
+            model
+                |> markLogged exerciseId setNumber True
+                |> (toExercise exerciseId model
+                        |> Maybe.andThen (Array.get setNumber)
+                        |> Maybe.map (LogSet (date model) exerciseId setNumber)
+                        |> Maybe.map Effects.withEffect
+                        |> Maybe.withDefault Effects.none
+                   )
 
 
 toExercise : String -> Model -> Maybe (Array StrengthSet)
@@ -173,7 +184,7 @@ loggedSet exerciseId setNumber (Logger args) =
 isLogged : String -> Int -> Model -> Bool
 isLogged exerciseId setNumber model =
     loggedSet exerciseId setNumber model
-        |> Maybe.map (\_ -> True)
+        |> Maybe.map .logged
         |> Maybe.withDefault False
 
 

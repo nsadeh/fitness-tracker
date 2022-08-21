@@ -15,6 +15,7 @@ type Effect
     | EditExercise Date String (List StrengthSet)
     | ChangeExerciseOrder Date String Int
     | LogWorkout Date String (List StrengthSet)
+    | LogSet Date String Int StrengthSet
     | Logout
     | Log LogLevel String
     | RouteTo Route

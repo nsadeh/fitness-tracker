@@ -20,7 +20,7 @@ import StrengthSet exposing (LoggableStrengthExercise, LoggableStrengthSet, asEx
 import Svg exposing (svg)
 import Svg.Attributes as SvgAttributes
 import Swiper
-import Utils.Error as Error exposing (RequestError(..))
+import Utils.Error exposing (RequestError(..))
 import Utils.Log exposing (LogLevel(..))
 import Utils.OrderedDict as OrderedDict exposing (OrderedDict)
 import Utils.OverrideClick exposing (overrideOnClickWith)
@@ -90,6 +90,7 @@ type Msg
     | Navigate Navigation.NavAction
     | FetchedWorkout (OrderedDict String LoggableStrengthExercise)
     | FetchedExercise String (Maybe LoggableStrengthExercise)
+    | RefreshExercise String
     | Passthrough
 
 
@@ -170,6 +171,11 @@ update msg model =
                         |> Effects.none
                         |> Actions.none
 
+                RefreshExercise exerciseId ->
+                    model
+                        |> Effects.withEffect (Effects.FetchExercise (State.today state) exerciseId)
+                        |> Actions.none
+
 
 view : Model -> Html Msg
 view model =
@@ -193,7 +199,7 @@ view model =
 
 viewWorkout : State -> Html Msg
 viewWorkout state =
-    div (class "w-screen text-blue-200" :: (Swiper.onSwipeEvents Navigation.SwipedNavbar |> List.map (Attributes.map Navigate)))
+    div [ class "w-screen text-blue-200" ]
         [ div []
             [ div (class "flex flex-row sm:justify-between justify-center mb-6 p-2 pb-2 mt-3" :: (Swiper.onSwipeEvents Navigation.SwipedNavbar |> List.map (Attributes.map Navigate)))
                 [ a [ class "hidden sm:block my-auto hover:text-blue-400" ] [ text "< yesterday" ]
@@ -361,10 +367,10 @@ viewSet state exerciseId setNumber set =
                     State.logger state
                         |> Logger.isLogged exerciseId setNumber
                   then
-                    unlogSetButton
+                    unlogSetButton exerciseId setNumber
 
                   else
-                    logSetButton
+                    logSetButton exerciseId setNumber
                 ]
             ]
         ]
@@ -413,17 +419,17 @@ editButton openEditor =
         ]
 
 
-logSetButton : Html msg
-logSetButton =
-    div [ class "my-auto fill-green-400 pl-4" ]
+logSetButton : String -> Int -> Html Msg
+logSetButton exerciseId setNumber =
+    div [ class "my-auto fill-green-400 pl-4", onClick (Logger.SubmitSetLog exerciseId setNumber |> LogWorkout) ]
         [ svg [ height 30, width 30 ]
             [ Outlined.check_circle_outline 30 (Color <| Color.rgb255 74 222 128) ]
         ]
 
 
-unlogSetButton : Html msg
-unlogSetButton =
-    div [ class "my-auto fill-green-400 pl-4" ]
+unlogSetButton : String -> Int -> Html Msg
+unlogSetButton exerciseId setNumber =
+    div [ class "my-auto fill-green-400 pl-4", onClick (Logger.CancelLog exerciseId setNumber |> LogWorkout) ]
         [ svg [ height 30, width 30, SvgAttributes.class "fill-green-400" ]
             [ Outlined.edit_note 30 (Color <| Color.rgb255 56 189 248) ]
         ]

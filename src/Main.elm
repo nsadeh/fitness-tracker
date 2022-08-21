@@ -27,7 +27,7 @@ main : Program E.Value Model Msg
 main =
     Browser.application
         { init = init
-        , view = viewDocument
+        , view = view
         , update = update
         , subscriptions = \_ -> Sub.none
         , onUrlRequest = onUrlRequest
@@ -87,6 +87,25 @@ onUrlChange url =
 -- Model --
 
 
+type AuthenticatedPage
+    = WorkoutsPage Workouts.Model
+    | Loading
+
+
+type UnauthenticatedPage
+    = Login Login.Model
+    | ResetPasswordPage PasswordReset.Model
+
+
+type Page
+    = Unauthd UnauthenticatedPage
+    | Authed AuthenticatedUser AuthenticatedPage
+
+
+type Model
+    = Model Key Page
+
+
 init : E.Value -> Url -> Key -> ( Model, Cmd Msg )
 init flags url key =
     case getUser flags of
@@ -116,33 +135,14 @@ init flags url key =
                     ( login key, Cmd.none )
 
 
-type AuthenticatedPage
-    = WorkoutsPage Workouts.Model
-    | Loading
-
-
-type UnauthenticatedPage
-    = Login Login.Model
-    | ResetPasswordPage PasswordReset.Model
-
-
-type Page
-    = Unauthd UnauthenticatedPage
-    | Authed AuthenticatedUser AuthenticatedPage
-
-
-type Model
-    = Model Key Page
-
-
 login : Key -> Model
 login key =
     Model key (Unauthd (Login Login.empty))
 
 
 authedPage : Key -> AuthenticatedUser -> AuthenticatedPage -> Model
-authedPage key user page_ =
-    Model key (Authed user page_)
+authedPage key user page =
+    Model key (Authed user page)
 
 
 unauthedPage : Key -> UnauthenticatedPage -> Model
@@ -171,6 +171,12 @@ loadWorkouts date =
         |> WorkoutsMsg
 
 
+refreshExercise : String -> Msg
+refreshExercise exerciseId =
+    Workouts.RefreshExercise exerciseId
+        |> WorkoutsMsg
+
+
 refreshAuthIfNeeded : Effect -> Error.RequestError -> Msg
 refreshAuthIfNeeded thenDo error =
     case error of
@@ -181,9 +187,16 @@ refreshAuthIfNeeded thenDo error =
             FailedFetch error
 
 
-postErrorHandler : Date.Date -> Effect -> Result Error.RequestError () -> Msg
-postErrorHandler date effect result =
-    Error.handle (\_ -> loadWorkouts date) (\err -> refreshAuthIfNeeded effect err) result
+refresh : Maybe String -> Date.Date -> Effect -> Result Error.RequestError () -> Msg
+refresh exercise date effect result =
+    Error.handle
+        (\_ ->
+            exercise
+                |> Maybe.map refreshExercise
+                |> Maybe.withDefault (loadWorkouts date)
+        )
+        (refreshAuthIfNeeded effect)
+        result
 
 
 runEffect : Model -> Effect -> Cmd Msg
@@ -211,26 +224,30 @@ runEffect (Model key page) effect =
 
                 DeleteExercise date exerciseId ->
                     workouts.deleteExercise date exerciseId
-                        |> Task.attempt (postErrorHandler date effect)
+                        |> Task.attempt (refresh Nothing date effect)
 
                 CreateExercise date exercise order ->
                     workouts.insert date { exercise = exercise, order = order, day = Date.weekday date }
-                        |> Task.attempt (postErrorHandler date effect)
+                        |> Task.attempt (refresh Nothing date effect)
 
                 EditExerciseName date exerciseId name ->
                     workouts.editName date exerciseId name
-                        |> Task.attempt (postErrorHandler date effect)
+                        |> Task.attempt (refresh (Just exerciseId) date effect)
 
                 EditExercise date exerciseId sets ->
                     workouts.editSets date exerciseId sets
-                        |> Task.attempt (postErrorHandler date effect)
+                        |> Task.attempt (refresh (Just exerciseId) date effect)
 
                 ChangeExerciseOrder _ _ _ ->
                     Cmd.none
 
                 LogWorkout date exerciseId sets ->
                     workouts.logExercise date exerciseId sets
-                        |> Task.attempt (postErrorHandler date effect)
+                        |> Task.attempt (refresh (Just exerciseId) date effect)
+
+                LogSet date exerciseId setNumber set ->
+                    workouts.logSet exerciseId date setNumber set
+                        |> Task.attempt (refresh (Just exerciseId) date effect)
 
                 Logout ->
                     Cmd.none
@@ -274,7 +291,7 @@ update msg (Model key page) =
             ( login key, Cmd.none )
 
         ( LoginMsg (Login.LoginSucceeded user), _ ) ->
-            Task.perform loadWorkouts Date.today
+            Cmd.batch [ Task.perform loadWorkouts Date.today, Users.storeUser user ]
                 |> Tuple.pair (authedPage key user Loading)
 
         ( LoginMsg loginMsg, Unauthd (Login loginPage) ) ->
@@ -290,7 +307,11 @@ update msg (Model key page) =
                 ( newPage, effects, _ ) =
                     Workouts.update workoutsMsg workoutsPage
             in
-            ( authedPage key user (WorkoutsPage newPage), Cmd.batch (List.map (runEffect (Model key page)) effects) )
+            ( authedPage key user (WorkoutsPage newPage)
+            , effects
+                |> List.map (runEffect (Model key page))
+                |> Cmd.batch
+            )
 
         ( PasswordResetMsg (PasswordReset.SetToken token), _ ) ->
             ( unauthedPage key (ResetPasswordPage (PasswordReset.fromToken token)), Cmd.none )
@@ -307,8 +328,8 @@ update msg (Model key page) =
 -- View --
 
 
-viewDocument : Model -> Document Msg
-viewDocument (Model _ page) =
+view : Model -> Document Msg
+view (Model _ page) =
     case page of
         Unauthd (Login model) ->
             { title = "Welcome to OnTrack"

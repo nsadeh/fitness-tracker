@@ -24,7 +24,7 @@ import Pages.Workouts.ExerciseBuilder as Builder
 import Pages.Workouts.ExerciseEditor as Editor
 import Pages.Workouts.WorkoutLogger as Logger
 import Set exposing (Set)
-import StrengthSet exposing (LoggableStrengthSet(..), LoggableStrengthExercise)
+import StrengthSet exposing (LoggableStrengthExercise, LoggableStrengthSet(..))
 import Swiper exposing (SwipingState)
 import Utils.OrderedDict as OrderedDict exposing (OrderedDict)
 
@@ -68,7 +68,7 @@ updateWorkout workout_ (State args) =
 
 updateExercise : String -> LoggableStrengthExercise -> State -> State
 updateExercise exerciseId exercise (State args) =
-    State { args | workout = OrderedDict.insert exerciseId exercise args.workout }
+    State { args | workout = OrderedDict.update exerciseId (\_ -> Just exercise) args.workout }
 
 
 deleteExercise : String -> State -> State

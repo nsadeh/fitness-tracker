@@ -180,8 +180,10 @@ foldLoggedRowForExercise row exercise =
 
         ( Just ex, action ) ->
             case action of
-                LogSet _ _ _ ->
-                    Just ex
+                LogSet date set setNumber ->
+                    ex
+                        |> Strength.logSet setNumber date set
+                        |> Just
 
                 Insert _ _ ->
                     Just ex
@@ -221,9 +223,8 @@ foldLoggedRow row workouts =
             in
             insert row.exerciseId ( weekdayToNumber insertRequest.day, exercise ) workouts
 
-        -- deprecated --
         LogSet _ _ _ ->
-            workouts
+            update row.exerciseId (updateExercise row) workouts
 
         Delete _ ->
             remove row.exerciseId workouts
@@ -246,6 +247,11 @@ foldLoggedRow row workouts =
 
         SwapExercises _ b ->
             swap row.exerciseId b workouts
+
+
+updateExercise : JournalRow -> (Maybe ( a, LoggableStrengthExercise ) -> Maybe ( a, LoggableStrengthExercise ))
+updateExercise row =
+    Maybe.andThen (\( a, exercise ) -> Maybe.map (\r -> ( a, r )) (foldLoggedRowForExercise row (Just exercise)))
 
 
 mapTaskResult : (r -> s) -> Task RequestError r -> Task RequestError s
